@@ -1,0 +1,70 @@
+{
+  "id": "@aiping/model_router",
+  "version": "1.0.0",
+  "name": "AIPing Model Router",
+  "description": "Routes 'aiping:claw' model requests between your local Ollama model and AIPing cloud (Kimi-2.5) using fast rule-based scoring.",
+  "extensions": ["dist/index.js"],
+  "configSchema": {
+    "type": "object",
+    "required": ["aipingApiKey"],
+    "properties": {
+      "aipingApiKey": {
+        "type": "string",
+        "title": "AIPing API Key",
+        "description": "Your AIPing API key. Get it at https://aiping.cn/user/user-center",
+        "secret": true
+      },
+      "localProxyUrl": {
+        "type": "string",
+        "title": "Local Proxy URL",
+        "description": "Ollama or local proxy base URL",
+        "default": "http://localhost:11434"
+      },
+      "localProxyKey": {
+        "type": "string",
+        "title": "Local Proxy Key",
+        "description": "Optional auth key for the local proxy",
+        "secret": true,
+        "default": ""
+      },
+      "localModel": {
+        "type": "string",
+        "title": "Local Model Name",
+        "description": "Name of the local model to use (e.g. qwen2.5:4b)",
+        "default": "qwen2.5:4b"
+      },
+      "cloudModel": {
+        "type": "string",
+        "title": "Cloud Model Name",
+        "description": "AIPing cloud model to use",
+        "default": "kimi-2.5"
+      },
+      "routingThreshold": {
+        "type": "number",
+        "title": "Routing Threshold",
+        "description": "Complexity score (0-100). Requests scoring >= threshold route to cloud, below go local.",
+        "default": 50,
+        "minimum": 0,
+        "maximum": 100
+      },
+      "fallbackToCloud": {
+        "type": "boolean",
+        "title": "Fallback to Cloud",
+        "description": "Automatically fall back to cloud if local model fails or times out",
+        "default": true
+      },
+      "localTimeoutMs": {
+        "type": "number",
+        "title": "Local Model Timeout (ms)",
+        "description": "Timeout for local model requests before triggering fallback",
+        "default": 30000
+      },
+      "debugRouting": {
+        "type": "boolean",
+        "title": "Debug Routing",
+        "description": "Log routing decisions to console",
+        "default": false
+      }
+    }
+  }
+}
