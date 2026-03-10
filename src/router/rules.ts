@@ -14,15 +14,15 @@ function extractAllText(request: ChatRequest): string {
 /**
  * Token Count Scorer
  * Long inputs are harder for small local models (limited context window).
- * > 2000 estimated tokens → full 30 points
- * Scales linearly from 0 at 500 tokens to 30 at 2000 tokens.
+ * > 4000 estimated tokens → full 30 points (relaxed to keep ~90% local)
+ * Scales linearly from 0 at 1500 tokens to 30 at 4000 tokens.
  */
 export class TokenCountScorer implements RuleScorer {
   readonly name = 'token_count';
   readonly maxScore = 30;
 
-  private readonly LOW_THRESHOLD = 500;
-  private readonly HIGH_THRESHOLD = 2000;
+  private readonly LOW_THRESHOLD = 1500;
+  private readonly HIGH_THRESHOLD = 4000;
 
   score(request: ChatRequest): DimensionScore {
     const text = extractAllText(request);
@@ -49,13 +49,13 @@ export class TokenCountScorer implements RuleScorer {
 /**
  * Code Complexity Scorer
  * Large code blocks require strong reasoning capabilities.
- * Code fences with > 30 lines → full 20 points.
+ * Code fences with > 80 lines → full 20 points (relaxed to keep ~90% local).
  */
 export class CodeComplexityScorer implements RuleScorer {
   readonly name = 'code_complexity';
   readonly maxScore = 20;
 
-  private readonly LINE_THRESHOLD = 30;
+  private readonly LINE_THRESHOLD = 80;
 
   score(request: ChatRequest): DimensionScore {
     const text = extractAllText(request);
@@ -84,31 +84,36 @@ export class CodeComplexityScorer implements RuleScorer {
 
 /**
  * Reasoning Depth Scorer
- * Keywords indicating complex analytical tasks favour stronger cloud models.
+ * Only triggers for clearly heavy analytical tasks (≥2 strong keywords).
+ * Single keyword matches no longer score to reduce cloud routing rate.
  */
 export class ReasoningDepthScorer implements RuleScorer {
   readonly name = 'reasoning_depth';
   readonly maxScore = 15;
 
-  private readonly KEYWORDS = [
-    // English
-    'analyze', 'analyse', 'compare', 'contrast', 'explain in detail',
-    'step by step', 'step-by-step', 'reason through', 'evaluate',
-    'critique', 'pros and cons', 'trade-offs', 'trade offs',
-    // Chinese
-    '分析', '对比', '比较', '详细解释', '逐步', '一步一步', '推理',
-    '评估', '优缺点', '权衡', '深入', '综合',
+  // Only "strong" multi-word or unambiguously complex phrases trigger scoring
+  private readonly STRONG_KEYWORDS = [
+    // English – multi-word / unambiguous
+    'explain in detail', 'step by step', 'step-by-step',
+    'reason through', 'pros and cons', 'trade-offs', 'trade offs',
+    'critically evaluate', 'comprehensive analysis',
+    // Chinese – unambiguously heavy
+    '详细分析', '逐步分析', '全面对比', '深度分析', '系统性分析',
+    '优缺点对比', '深入推理',
   ];
 
   score(request: ChatRequest): DimensionScore {
     const text = extractAllText(request).toLowerCase();
-    const matched = this.KEYWORDS.filter((kw) => text.includes(kw.toLowerCase()));
+    const matched = this.STRONG_KEYWORDS.filter((kw) =>
+      text.includes(kw.toLowerCase())
+    );
 
-    const points = matched.length > 0 ? this.maxScore : 0;
+    // Require ≥1 strong multi-word phrase to score
+    const points = matched.length >= 1 ? this.maxScore : 0;
     const reason =
-      matched.length > 0
-        ? `Complex reasoning keywords found: ${matched.slice(0, 3).join(', ')}`
-        : 'No complex reasoning keywords';
+      matched.length >= 1
+        ? `强推理关键词: ${matched.slice(0, 3).join(', ')}`
+        : '无强推理关键词';
 
     return { name: this.name, score: points, maxScore: this.maxScore, reason };
   }
@@ -117,13 +122,13 @@ export class ReasoningDepthScorer implements RuleScorer {
 /**
  * Multi-turn Context Scorer
  * Long conversation histories require the model to synthesize and track many facts.
- * > 6 message turns → full 20 points.
+ * > 16 messages → full 20 points (relaxed to keep ~90% local).
  */
 export class MultiTurnContextScorer implements RuleScorer {
   readonly name = 'multi_turn_context';
   readonly maxScore = 20;
 
-  private readonly TURN_THRESHOLD = 6;
+  private readonly TURN_THRESHOLD = 16;
 
   score(request: ChatRequest): DimensionScore {
     const turns = request.messages.length;

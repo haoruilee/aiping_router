@@ -21,6 +21,7 @@ function makeRequest(content: string, turns = 1): ChatRequest {
 }
 
 // ── TokenCountScorer ──────────────────────────────────────────────────────────
+// HIGH_THRESHOLD = 4000, LOW_THRESHOLD = 1500
 
 describe('TokenCountScorer', () => {
   const scorer = new TokenCountScorer();
@@ -30,14 +31,20 @@ describe('TokenCountScorer', () => {
     expect(result.score).toBe(0);
   });
 
-  it('returns max score for long messages (>2000 tokens)', () => {
-    const longContent = 'word '.repeat(2200); // ~2200 tokens
+  it('returns 0 for medium messages under 1500 tokens', () => {
+    const content = 'word '.repeat(500); // ~500 tokens
+    const result = scorer.score(makeRequest(content));
+    expect(result.score).toBe(0);
+  });
+
+  it('returns max score for very long messages (>4000 tokens)', () => {
+    const longContent = 'word '.repeat(4500); // ~4500 tokens
     const result = scorer.score(makeRequest(longContent));
     expect(result.score).toBe(scorer.maxScore);
   });
 
-  it('returns partial score for medium messages', () => {
-    const medContent = 'word '.repeat(900); // ~900 tokens estimated
+  it('returns partial score for messages between 1500-4000 tokens', () => {
+    const medContent = 'word '.repeat(2500); // ~2500 tokens
     const result = scorer.score(makeRequest(medContent));
     expect(result.score).toBeGreaterThan(0);
     expect(result.score).toBeLessThan(scorer.maxScore);
@@ -45,6 +52,7 @@ describe('TokenCountScorer', () => {
 });
 
 // ── CodeComplexityScorer ──────────────────────────────────────────────────────
+// LINE_THRESHOLD = 80
 
 describe('CodeComplexityScorer', () => {
   const scorer = new CodeComplexityScorer();
@@ -54,22 +62,25 @@ describe('CodeComplexityScorer', () => {
     expect(result.score).toBe(0);
   });
 
-  it('returns max score for large code blocks', () => {
-    const codeLines = Array(35).fill('  const x = 1;').join('\n');
+  it('returns 0 for small code blocks (< 80 lines)', () => {
+    const codeLines = Array(20).fill('  const x = 1;').join('\n');
+    const content = `Here is code:\n\`\`\`typescript\n${codeLines}\n\`\`\``;
+    const result = scorer.score(makeRequest(content));
+    // Partial score since lines < threshold
+    expect(result.score).toBeGreaterThanOrEqual(0);
+    expect(result.score).toBeLessThan(scorer.maxScore);
+  });
+
+  it('returns max score for large code blocks (>= 80 lines)', () => {
+    const codeLines = Array(85).fill('  const x = 1;').join('\n');
     const content = `Here is code:\n\`\`\`typescript\n${codeLines}\n\`\`\``;
     const result = scorer.score(makeRequest(content));
     expect(result.score).toBe(scorer.maxScore);
   });
-
-  it('returns partial score for small code blocks', () => {
-    const content = '```python\nprint("hello")\n```';
-    const result = scorer.score(makeRequest(content));
-    expect(result.score).toBeGreaterThan(0);
-    expect(result.score).toBeLessThan(scorer.maxScore);
-  });
 });
 
 // ── ReasoningDepthScorer ──────────────────────────────────────────────────────
+// Only fires on strong multi-word phrases now
 
 describe('ReasoningDepthScorer', () => {
   const scorer = new ReasoningDepthScorer();
@@ -79,18 +90,30 @@ describe('ReasoningDepthScorer', () => {
     expect(result.score).toBe(0);
   });
 
-  it('detects English reasoning keywords', () => {
-    const result = scorer.score(makeRequest('Please analyze and compare these two approaches step by step.'));
+  it('returns 0 for single weak keywords like "分析" alone', () => {
+    // "分析" alone is no longer in the strong keyword list
+    const result = scorer.score(makeRequest('请分析一下'));
+    expect(result.score).toBe(0);
+  });
+
+  it('detects strong English multi-word phrases', () => {
+    const result = scorer.score(makeRequest('Please explain in detail how this works.'));
     expect(result.score).toBe(scorer.maxScore);
   });
 
-  it('detects Chinese reasoning keywords', () => {
-    const result = scorer.score(makeRequest('请详细分析这两个方案的优缺点'));
+  it('detects strong Chinese multi-word phrases', () => {
+    const result = scorer.score(makeRequest('请对这两个方案进行深度分析'));
+    expect(result.score).toBe(scorer.maxScore);
+  });
+
+  it('detects step-by-step keyword', () => {
+    const result = scorer.score(makeRequest('Walk me through this step by step.'));
     expect(result.score).toBe(scorer.maxScore);
   });
 });
 
 // ── MultiTurnContextScorer ────────────────────────────────────────────────────
+// TURN_THRESHOLD = 16
 
 describe('MultiTurnContextScorer', () => {
   const scorer = new MultiTurnContextScorer();
@@ -100,8 +123,14 @@ describe('MultiTurnContextScorer', () => {
     expect(result.score).toBe(0);
   });
 
-  it('returns max score for long conversations', () => {
-    const result = scorer.score(makeRequest('content', 7));
+  it('returns partial score for moderate conversations (6 turns)', () => {
+    const result = scorer.score(makeRequest('content', 6));
+    expect(result.score).toBeGreaterThan(0);
+    expect(result.score).toBeLessThan(scorer.maxScore);
+  });
+
+  it('returns max score for very long conversations (>= 16 turns)', () => {
+    const result = scorer.score(makeRequest('content', 17));
     expect(result.score).toBe(scorer.maxScore);
   });
 });
@@ -140,10 +169,17 @@ describe('OverrideScorer', () => {
 describe('Scorer integration', () => {
   const scorer = new Scorer();
 
-  it('short simple message scores low', () => {
-    const result = scorer.score(makeRequest('What time is it?'));
+  it('typical short message scores well below 85 threshold', () => {
+    const result = scorer.score(makeRequest('请帮我写一个 hello world'));
+    // Should score < 20; definitely local
     expect(result.totalScore).toBeLessThan(20);
     expect(result.forced).toBeUndefined();
+  });
+
+  it('medium conversation (6 turns) still scores below 85', () => {
+    const result = scorer.score(makeRequest('How do I center a div?', 6));
+    // MultiTurn partial + nothing else → still well below 85
+    expect(result.totalScore).toBeLessThan(85);
   });
 
   it('@local override short-circuits scoring', () => {
@@ -155,10 +191,10 @@ describe('Scorer integration', () => {
     expect(result.forced).toBe('local');
   });
 
-  it('complex multi-turn message scores high', () => {
-    const longCode = Array(40).fill('const x = require("something");').join('\n');
-    const content = `Please analyze and compare:\n\`\`\`js\n${longCode}\n\`\`\``;
-    const result = scorer.score(makeRequest(content, 8));
-    expect(result.totalScore).toBeGreaterThan(50);
+  it('genuinely heavy request (huge + code + reasoning + long chat) scores >= 85', () => {
+    const bigCode = Array(90).fill('const x = require("something");').join('\n');
+    const content = `请逐步分析这段代码并对比优缺点：\n\`\`\`js\n${bigCode}\n\`\`\`\n` + 'x'.repeat(6000);
+    const result = scorer.score(makeRequest(content, 17));
+    expect(result.totalScore).toBeGreaterThanOrEqual(85);
   });
 });

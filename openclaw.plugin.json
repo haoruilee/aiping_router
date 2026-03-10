@@ -42,8 +42,8 @@
       "routingThreshold": {
         "type": "number",
         "title": "Routing Threshold",
-        "description": "Complexity score (0-100). Requests scoring >= threshold route to cloud, below go local.",
-        "default": 50,
+        "description": "复杂度评分阈值 (0-100)。评分 >= 阈值 → 云端，< 阈值 → 本地。默认 85 使约 90% 请求走本地。",
+        "default": 85,
         "minimum": 0,
         "maximum": 100
       },

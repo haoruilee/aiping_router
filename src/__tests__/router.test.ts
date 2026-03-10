@@ -19,19 +19,31 @@ function makeRequest(content: string, turns = 1): ChatRequest {
   return { model: 'aiping:claw', messages };
 }
 
-describe('Router.decide()', () => {
-  it('routes short simple messages to local', () => {
+describe('Router.decide() — default threshold 85', () => {
+  it('routes short simple message to local', () => {
     const router = new Router(baseConfig);
     const decision = router.decide(makeRequest('Hello!'));
     expect(decision.target).toBe('local');
     expect(decision.forced).toBe(false);
   });
 
-  it('routes high-complexity messages to cloud', () => {
-    const longCode = Array(40).fill('const x = require("dep");').join('\n');
-    const content = `Analyze:\n\`\`\`js\n${longCode}\n\`\`\``;
+  it('routes everyday coding questions to local', () => {
     const router = new Router(baseConfig);
-    const decision = router.decide(makeRequest(content, 8));
+    const decision = router.decide(makeRequest('如何用 Python 读取 CSV 文件？'));
+    expect(decision.target).toBe('local');
+  });
+
+  it('routes moderate multi-turn (6 turns) to local', () => {
+    const router = new Router(baseConfig);
+    const decision = router.decide(makeRequest('What is React?', 6));
+    expect(decision.target).toBe('local');
+  });
+
+  it('routes genuinely heavy request to cloud', () => {
+    const bigCode = Array(90).fill('const x = require("dep");').join('\n');
+    const content = `请逐步分析这段代码并对比优缺点：\n\`\`\`js\n${bigCode}\n\`\`\`\n` + 'x'.repeat(6000);
+    const router = new Router(baseConfig);
+    const decision = router.decide(makeRequest(content, 17));
     expect(decision.target).toBe('cloud');
   });
 
@@ -42,7 +54,7 @@ describe('Router.decide()', () => {
       messages: [
         {
           role: 'user',
-          content: 'Please analyze ' + 'x'.repeat(3000) + ' @local',
+          content: '请逐步分析 ' + 'x'.repeat(5000) + ' @local',
         },
       ],
     };
@@ -51,7 +63,7 @@ describe('Router.decide()', () => {
     expect(decision.forced).toBe(true);
   });
 
-  it('honours @cloud override even for simple requests', () => {
+  it('honours @cloud override for simple requests', () => {
     const router = new Router(baseConfig);
     const req: ChatRequest = {
       model: 'aiping:claw',
@@ -62,15 +74,19 @@ describe('Router.decide()', () => {
     expect(decision.forced).toBe(true);
   });
 
-  it('respects custom threshold', () => {
-    // With threshold=100 everything should go local (nothing scores 100)
+  it('respects custom threshold of 100 (everything local)', () => {
     const highThresholdConfig = { ...baseConfig, routingThreshold: 100 };
     const router = new Router(highThresholdConfig);
-    const longCode = Array(40).fill('const x = 1;').join('\n');
-    const decision = router.decide(
-      makeRequest(`\`\`\`js\n${longCode}\n\`\`\``, 8)
-    );
+    const bigCode = Array(90).fill('const x = 1;').join('\n');
+    const decision = router.decide(makeRequest(`\`\`\`js\n${bigCode}\n\`\`\``, 17));
     expect(decision.target).toBe('local');
+  });
+
+  it('respects custom threshold of 0 (everything cloud)', () => {
+    const lowThresholdConfig = { ...baseConfig, routingThreshold: 0 };
+    const router = new Router(lowThresholdConfig);
+    const decision = router.decide(makeRequest('Hello!'));
+    expect(decision.target).toBe('cloud');
   });
 
   it('includes reasons in decision', () => {

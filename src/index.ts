@@ -4,6 +4,8 @@
  * Registers the "aiping:claw" virtual model with the OpenClaw Gateway
  * and routes incoming requests to either a local Ollama model or the
  * AIPing cloud API based on a lightweight 5-dimension rule scorer.
+ *
+ * 默认策略：约 90% 请求走本地模型，只有复杂任务走云端。
  */
 
 import type { ChatRequest, ChatResponse, PluginConfig } from './types.js';
@@ -25,11 +27,10 @@ export default function register(api: OpenClawPluginAPI): void {
     config = buildConfig(newConfig);
   });
 
-  // ── Setup wizard ────────────────────────────────────────────────────────────
-  // Runs once if aipingApiKey is missing.  Exposes a CLI command for re-running.
+  // ── 注册 CLI 命令：重新运行配置向导 ─────────────────────────────────────
   api.registerCommand({
     name: 'aiping:setup',
-    description: 'Run the AIPing Model Router setup wizard',
+    description: '运行 AIPing Model Router 中文配置向导',
     async run() {
       const updated = await runSetupWizard(config);
       await api.setConfig(updated as unknown as Record<string, unknown>);
@@ -37,22 +38,27 @@ export default function register(api: OpenClawPluginAPI): void {
     },
   });
 
-  // Run wizard automatically if key is not configured
+  // ── 首次安装：自动触发中文配置向导 ─────────────────────────────────────
+  // 如果 aipingApiKey 还没配置，说明是首次安装，自动启动向导。
   if (!config.aipingApiKey) {
     runSetupWizard(config)
       .then(async (updated) => {
         await api.setConfig(updated as unknown as Record<string, unknown>);
         config = updated;
       })
-      .catch((err: Error) => {
-        console.warn('[aiping:router] Setup wizard failed:', err.message);
+      .catch((wizardErr: Error) => {
+        console.warn(
+          '[aiping:router] 配置向导退出，稍后可运行 `openclaw run aiping:setup` 重新配置。',
+          wizardErr.message
+        );
       });
   }
 
-  // ── Virtual model route ─────────────────────────────────────────────────────
+  // ── 注册虚拟模型 aiping:claw ─────────────────────────────────────────────
   api.registerModelRoute({
     model: 'aiping:claw',
-    description: 'AIPing smart router — auto-selects local or cloud model',
+    description:
+      'AIPing 智能路由 — 自动在本地模型和云端 Kimi-2.5 之间切换（约 90% 走本地）',
 
     async chat(request: ChatRequest): Promise<ChatResponse> {
       return handleChat(request, config);
@@ -63,9 +69,18 @@ export default function register(api: OpenClawPluginAPI): void {
     },
   });
 
+  // ── 注册为默认模型 ────────────────────────────────────────────────────────
+  // 尝试通过 Gateway API 设置默认模型（若 API 可用）
+  if (typeof api.setDefaultModel === 'function') {
+    api.setDefaultModel('aiping:claw').catch(() => {
+      // 静默失败：向导内已提供手动设置方式
+    });
+  }
+
   console.log(
-    '[aiping:router] Registered model "aiping:claw"' +
-      (config.debugRouting ? ' (debug mode on)' : '')
+    '[aiping:router] ✅ 已注册虚拟模型 "aiping:claw"' +
+      ` | 阈值=${config.routingThreshold} | 本地=${config.localModel}` +
+      (config.debugRouting ? ' | 路由调试开启' : '')
   );
 }
 
@@ -192,4 +207,6 @@ interface OpenClawPluginAPI {
     chat(request: ChatRequest): Promise<ChatResponse>;
     chatStream(request: ChatRequest): AsyncGenerator<string>;
   }): void;
+  /** Optional: set the Gateway's default model (available in OpenClaw Gateway ≥ 1.x) */
+  setDefaultModel?(model: string): Promise<void>;
 }
