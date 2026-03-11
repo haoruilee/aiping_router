@@ -1,0 +1,78 @@
+name: Publish to npm
+
+# Triggers on a version tag push: git tag v1.2.0 && git push --tags
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  # ── 1. Run full test suite before publishing ───────────────────────────────
+  test:
+    name: Test before publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  # ── 2. Publish to npm ──────────────────────────────────────────────────────
+  publish:
+    name: Publish @aiping/model_router
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to create GitHub Release
+      id-token: write   # needed for npm provenance
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify package version matches tag
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "❌ package.json version ($PKG_VERSION) does not match tag ($TAG_VERSION)"
+            exit 1
+          fi
+          echo "✅ Version $PKG_VERSION matches tag $GITHUB_REF_NAME"
+
+      - name: Publish to npm (public scoped package)
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "v${{ github.ref_name }}"
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            ## 安装
+
+            ```bash
+            openclaw plugins install @aiping/model_router
+            ```
+
+            查看完整变更记录：[CHANGELOG.md](https://github.com/haoruilee/aiping_router/blob/main/docs/CHANGELOG.md)
