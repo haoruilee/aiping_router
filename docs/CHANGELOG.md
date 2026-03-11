@@ -16,6 +16,28 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.2.0] - 2026-03-10
+
+### Added
+- **`src/setup/detector.ts`** — 独立的环境检测模块：
+  - `detectOllama()`: 检测二进制是否存在、服务是否运行、列出已下载模型（优先 `/api/tags`，兜底 `ollama list` CLI）
+  - `detectAiping()`: 验证 AIPing API Key 连通性，区分 401 无效 Key / 429 限速 / 网络不可达
+  - `RECOMMENDED_MODELS`: 内置推荐本地模型列表（qwen2.5:4b/7b, llama3.2:3b, phi3.5:mini, gemma3:4b）
+- **`LocalAdapter.listModels()`** — 查询本地服务可用模型列表
+- **向导环境预检阶段** — 启动时自动扫描 Ollama，打印当前状态
+- **智能模型选择器** — 检测到已有模型时显示编号列表，用户选序号即可；无模型时展示推荐列表+拉取命令
+- **AIPing Key 验证循环** — Key 无效时不静默跳过，提示错误原因 + 重新输入或跳过
+- **Ollama 修复引导循环** — 服务未启动时逐步引导（安装命令 / `ollama serve` / 模型下载），支持按 Enter 重新检测
+- **最终连通性验证** — 配置完成前对两端做真实连通检测，汇报状态；若两端均失败则明确警告
+- **配置摘要表格** — 向导结束时打印本地/云端/阈值/回退状态的一览表
+- 新增测试：`detector.test.ts`（11 个）、`local-adapter.test.ts`（5 个），总测试数 47
+
+### Changed
+- `LocalAdapter.ping()` 优先使用 `/api/tags`（Ollama 原生接口），兜底 `/v1/models`
+- 向导版本号更新至 v1.2
+
+---
+
 ## [1.1.0] - 2026-03-10
 
 ### Changed

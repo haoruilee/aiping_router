@@ -125,14 +125,23 @@ export class LocalAdapter {
   async ping(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
     const start = Date.now();
     try {
-      const res = await fetch(`${this.baseUrl}/v1/models`, {
+      const res = await fetch(`${this.baseUrl}/api/tags`, {
         method: 'GET',
         headers: this.buildHeaders(),
         signal: AbortSignal.timeout(5000),
       });
       const latencyMs = Date.now() - start;
       if (!res.ok) {
-        return { ok: false, latencyMs, error: `HTTP ${res.status}` };
+        // Fallback: also try OpenAI-compatible /v1/models
+        const res2 = await fetch(`${this.baseUrl}/v1/models`, {
+          method: 'GET',
+          headers: this.buildHeaders(),
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!res2.ok) {
+          return { ok: false, latencyMs, error: `HTTP ${res.status}` };
+        }
+        return { ok: true, latencyMs: Date.now() - start };
       }
       return { ok: true, latencyMs };
     } catch (err) {
@@ -142,6 +151,33 @@ export class LocalAdapter {
         error: (err as Error).message,
       };
     }
+  }
+
+  /** Returns list of model names available on the local server. */
+  async listModels(): Promise<string[]> {
+    try {
+      // Try Ollama native endpoint first
+      const res = await fetch(`${this.baseUrl}/api/tags`, {
+        headers: this.buildHeaders(),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { models?: Array<{ name: string }> };
+        return (data.models ?? []).map((m) => m.name);
+      }
+      // Fallback: OpenAI-compatible /v1/models
+      const res2 = await fetch(`${this.baseUrl}/v1/models`, {
+        headers: this.buildHeaders(),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res2.ok) {
+        const data2 = (await res2.json()) as { data?: Array<{ id: string }> };
+        return (data2.data ?? []).map((m) => m.id);
+      }
+    } catch {
+      // ignored
+    }
+    return [];
   }
 }
 
