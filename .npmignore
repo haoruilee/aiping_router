@@ -1,0 +1,15 @@
+# Source files (compiled output in dist/ is what gets published)
+src/
+tsconfig.json
+
+# Dev / CI
+.github/
+scripts/
+node_modules/
+
+# Docs (keep README.md which is in "files")
+docs/
+
+# Misc
+.gitignore
+*.tgz

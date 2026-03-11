@@ -4,7 +4,6 @@
 > One plugin, one virtual model — zero workflow changes.
 
 [![npm version](https://img.shields.io/npm/v/@aiping/model_router)](https://www.npmjs.com/package/@aiping/model_router)
-[![license: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ---
 
@@ -168,8 +167,3 @@ npm run dev
 - [Changelog](docs/CHANGELOG.md)
 - [Architecture Plan](docs/plan-v1.md)
 
----
-
-## License
-
-MIT © AIPing Team
