@@ -1,4 +1,4 @@
-// Shared type definitions for @aiping/model_router
+// Shared type definitions for @aiping.cn/model_router
 
 export interface PluginConfig {
   aipingApiKey: string;

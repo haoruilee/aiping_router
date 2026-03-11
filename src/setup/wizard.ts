@@ -580,8 +580,8 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
     blank();
     info('  常用命令：');
     info(c.dim('  openclaw run aiping:setup                                  # 重新配置'));
-    info(c.dim('  openclaw plugins config @aiping/model_router list          # 查看配置'));
-    info(c.dim('  openclaw plugins config @aiping/model_router set debugRouting true  # 路由日志'));
+    info(c.dim('  openclaw plugins config @aiping.cn/model_router list          # 查看配置'));
+    info(c.dim('  openclaw plugins config @aiping.cn/model_router set debugRouting true  # 路由日志'));
     blank();
 
     return config;

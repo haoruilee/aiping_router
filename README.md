@@ -1,9 +1,9 @@
-# @aiping/model_router
+# @aiping.cn/model_router
 
 > Smart routing between your local Ollama model and AIPing cloud (Kimi-2.5).  
 > One plugin, one virtual model — zero workflow changes.
 
-[![npm version](https://img.shields.io/npm/v/@aiping/model_router)](https://www.npmjs.com/package/@aiping/model_router)
+[![npm version](https://img.shields.io/npm/v/@aiping.cn/model_router)](https://www.npmjs.com/package/@aiping.cn/model_router)
 
 ---
 
@@ -25,7 +25,7 @@ Routing is based on a **5-dimension rule scorer** that runs in < 1ms — no ML i
 ### 1. Install
 
 ```bash
-openclaw plugins install @aiping/model_router
+openclaw plugins install @aiping.cn/model_router
 ```
 
 The setup wizard will guide you through configuration automatically.
@@ -54,13 +54,13 @@ Select **`aiping:claw`** as your model in OpenClaw. The plugin handles the rest.
 
 ```bash
 # Set your AIPing API key
-openclaw plugins config @aiping/model_router set aipingApiKey "sk-your-key-here"
+openclaw plugins config @aiping.cn/model_router set aipingApiKey "sk-your-key-here"
 
 # Change local proxy URL (default: http://localhost:11434)
-openclaw plugins config @aiping/model_router set localProxyUrl "http://localhost:11434"
+openclaw plugins config @aiping.cn/model_router set localProxyUrl "http://localhost:11434"
 
 # Change local model (default: qwen2.5:4b)
-openclaw plugins config @aiping/model_router set localModel "qwen2.5:4b"
+openclaw plugins config @aiping.cn/model_router set localModel "qwen2.5:4b"
 
 # Run setup wizard again
 openclaw run aiping:setup

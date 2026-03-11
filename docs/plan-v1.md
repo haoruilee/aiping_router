@@ -1,4 +1,4 @@
-# @aiping/model_router — 详细架构方案
+# @aiping.cn/model_router — 详细架构方案
 
 **版本**: v1.0  
 **日期**: 2026-03-10  
@@ -67,7 +67,7 @@
 ## 3. 项目结构
 
 ```
-@aiping/model_router/
+@aiping.cn/model_router/
 ├── package.json                    # npm 包描述
 ├── openclaw.plugin.json            # OpenClaw 插件清单
 ├── tsconfig.json                   # TypeScript 配置
@@ -161,7 +161,7 @@ Authorization: Bearer {aipingApiKey}
 首次安装时自动触发：
 
 ```
-🎉 Welcome to @aiping/model_router!
+🎉 Welcome to @aiping.cn/model_router!
 
 Step 1/4: AIPing API Key
   Your key is available at: https://aiping.cn/user/user-center
@@ -190,7 +190,7 @@ Step 4/4: Testing connections...
 
 ```json
 {
-  "id": "@aiping/model_router",
+  "id": "@aiping.cn/model_router",
   "version": "1.0.0",
   "name": "AIPing Model Router",
   "description": "Routes requests between local and cloud models intelligently",
@@ -257,12 +257,12 @@ POST /v1/chat/completions  (model: "aiping:claw")
 
 ```bash
 # 一键安装
-openclaw plugins install @aiping/model_router
+openclaw plugins install @aiping.cn/model_router
 
 # 安装后自动触发配置向导
 # 或手动配置
-openclaw plugins config @aiping/model_router set aipingApiKey "sk-xxxxxxxx"
-openclaw plugins config @aiping/model_router set localProxyUrl "http://localhost:11434"
+openclaw plugins config @aiping.cn/model_router set aipingApiKey "sk-xxxxxxxx"
+openclaw plugins config @aiping.cn/model_router set localProxyUrl "http://localhost:11434"
 ```
 
 ---

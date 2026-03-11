@@ -92,5 +92,5 @@ console.log(`   GitHub Actions will now build and publish to npm.`);
 console.log(`   Watch progress: ${cyan('https://github.com/haoruilee/aiping_router/actions')}`);
 console.log('');
 console.log('   Once published, users can install with:');
-console.log(cyan('   openclaw plugins install @aiping/model_router'));
+console.log(cyan('   openclaw plugins install @aiping.cn/model_router'));
 console.log('');

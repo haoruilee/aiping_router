@@ -1,4 +1,4 @@
-# @aiping/model_router — 架构方案 v1.1（变更说明）
+# @aiping.cn/model_router — 架构方案 v1.1（变更说明）
 
 **版本**: v1.1  
 **日期**: 2026-03-10  

@@ -25,7 +25,7 @@ jobs:
 
   # ── 2. Publish to npm ──────────────────────────────────────────────────────
   publish:
-    name: Publish @aiping/model_router
+    name: Publish @aiping.cn/model_router
     needs: test
     runs-on: ubuntu-latest
     permissions:
@@ -72,7 +72,7 @@ jobs:
             ## 安装
 
             ```bash
-            openclaw plugins install @aiping/model_router
+            openclaw plugins install @aiping.cn/model_router
             ```
 
             查看完整变更记录：[CHANGELOG.md](https://github.com/haoruilee/aiping_router/blob/main/docs/CHANGELOG.md)

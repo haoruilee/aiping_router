@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `@aiping/model_router` are documented here.
+All notable changes to `@aiping.cn/model_router` are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -61,7 +61,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [1.0.0] - 2026-03-10
 
 ### Added
-- Initial implementation of `@aiping/model_router` OpenClaw plugin
+- Initial implementation of `@aiping.cn/model_router` OpenClaw plugin
 - 5-dimension rule-based scoring engine:
   - Token count dimension (0–30 pts)
   - Code complexity dimension (0–20 pts)

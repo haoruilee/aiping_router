@@ -1,5 +1,5 @@
 /**
- * @aiping/model_router — OpenClaw Plugin Entry Point
+ * @aiping.cn/model_router — OpenClaw Plugin Entry Point
  *
  * Registers the "aiping:claw" virtual model with the OpenClaw Gateway
  * and routes incoming requests to either a local Ollama model or the

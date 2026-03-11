@@ -1,5 +1,5 @@
 {
-  "id": "@aiping/model_router",
+  "id": "@aiping.cn/model_router",
   "version": "1.0.0",
   "name": "AIPing Model Router",
   "description": "Routes 'aiping:claw' model requests between your local Ollama model and AIPing cloud (Kimi-2.5) using fast rule-based scoring.",
