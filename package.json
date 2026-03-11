@@ -1,0 +1,42 @@
+{
+  "name": "@aiping/model_router",
+  "version": "1.0.0",
+  "description": "OpenClaw plugin that routes requests between local (Ollama) and cloud (AIPing/Kimi-2.5) models using lightweight rule-based scoring",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext .ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "model-router",
+    "aiping",
+    "ollama",
+    "llm-routing"
+  ],
+  "author": "AIPing Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/haoruilee/aiping_router"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
+  }
+}
