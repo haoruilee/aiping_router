@@ -39,7 +39,7 @@ export default function register(api: OpenClawPluginAPI): void {
         .command('model-router-setup')
         .description('配置 AIPing Model Router（中文向导 / one-liner flags）')
         .option('--aiping-api-key <key>',      'AIPing API Key（跳过交互式提问）')
-        .option('--local-model <model>',       '本地模型名称', 'qwen2.5:4b')
+        .option('--local-model <model>',       '本地模型名称（不填则使用 Ollama 检测到的第一个模型）')
         .option('--local-proxy-url <url>',     '本地 Ollama 地址', 'http://localhost:11434')
         .option('--local-proxy-key <key>',     '本地代理鉴权 Key（可选）')
         .option('--cloud-model <model>',       '云端模型名称', 'Kimi-K2.5')
@@ -49,11 +49,32 @@ export default function register(api: OpenClawPluginAPI): void {
           const o = opts as SetupOptions;
           if (o.aipingApiKey) {
             // ── Non-interactive: apply flags directly ─────────────────────
+            // Auto-detect local model from Ollama if not specified
+            let resolvedLocalModel = o.localModel ?? '';
+            if (!resolvedLocalModel) {
+              const proxyUrl = o.localProxyUrl ?? DEFAULT_CONFIG.localProxyUrl;
+              try {
+                const { detectOllama } = await import('./setup/detector.js');
+                const status = await detectOllama(proxyUrl);
+                if (status.models.length > 0) {
+                  resolvedLocalModel = status.models[0]!.name;
+                  console.log(`  🔍 自动检测到本地模型: ${resolvedLocalModel}`);
+                } else {
+                  console.error('  ❌ 未检测到 Ollama 模型，请先运行: ollama pull <model>');
+                  console.error('  或指定: --local-model <model>');
+                  process.exit(1);
+                }
+              } catch {
+                console.error('  ❌ 无法连接 Ollama，请确认 ollama serve 正在运行');
+                console.error('  或指定: --local-model <model>');
+                process.exit(1);
+              }
+            }
             const config: PluginConfig = {
               aipingApiKey:     o.aipingApiKey,
               localProxyUrl:    o.localProxyUrl    ?? DEFAULT_CONFIG.localProxyUrl,
               localProxyKey:    o.localProxyKey    ?? '',
-              localModel:       o.localModel       ?? DEFAULT_CONFIG.localModel,
+              localModel:       resolvedLocalModel,
               cloudModel:       o.cloudModel       ?? DEFAULT_CONFIG.cloudModel,
               routingThreshold: parseInt(o.routingThreshold ?? '85', 10) || DEFAULT_CONFIG.routingThreshold,
               fallbackToCloud:  o.fallback         ?? DEFAULT_CONFIG.fallbackToCloud,
@@ -157,7 +178,7 @@ export default function register(api: OpenClawPluginAPI): void {
         plugin: '@aiping.cn/model_router',
         version: '1.4.0',
         configured: Boolean(liveCfg.aipingApiKey),
-        localModel: liveCfg.localModel,
+        localModel: liveCfg.localModel || '(未配置，请运行 openclaw model-router-setup)',
         cloudModel: liveCfg.cloudModel,
         routingThreshold: liveCfg.routingThreshold,
         proxyEndpoint: '/aiping/v1/chat/completions',

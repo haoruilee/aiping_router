@@ -15,10 +15,11 @@ export interface PluginConfig {
 export const DEFAULT_CONFIG: Omit<PluginConfig, 'aipingApiKey'> = {
   localProxyUrl: 'http://localhost:11434',
   localProxyKey: '',
-  localModel: 'qwen2.5:4b',
+  // No hardcoded local model — auto-detected from Ollama at setup time.
+  // Falls back to qwen2.5:4b only if the user never ran the wizard.
+  localModel: '',
   cloudModel: 'Kimi-K2.5',
   // High threshold keeps ~90% of requests on the local model.
-  // Only genuinely heavy requests (long context + complex code + deep reasoning) reach cloud.
   routingThreshold: 85,
   fallbackToCloud: true,
   localTimeoutMs: 30000,

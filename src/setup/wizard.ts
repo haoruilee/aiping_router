@@ -130,52 +130,125 @@ function printAipingStatus(status: AipingStatus): void {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Interactive model picker
+// Interactive model picker — auto-detects, validates, guides pull if missing
 // ──────────────────────────────────────────────────────────────────────────────
 async function pickLocalModel(
   rl: readline.Interface,
   available: Array<{ name: string; size?: string }>,
-  defaultModel: string
+  serviceRunning: boolean,
+  proxyUrl: string,
+  existingModel?: string
 ): Promise<string> {
-  if (available.length === 0) {
+
+  if (available.length > 0) {
+    // ── Service running + models found: show list, no hardcoded default ──────
     blank();
-    info('  未检测到可用的本地模型，以下是推荐选项（供下载参考）：');
+    info('  检测到以下本地模型，请选择序号，或直接输入其他模型名称：');
     blank();
-    RECOMMENDED_MODELS.forEach((m, i) => {
-      info(`  ${c.bold(`[${i + 1}]`)}  ${c.cyan(m.name.padEnd(18))} ${m.size.padEnd(10)}  ${c.dim(m.desc)}`);
+    available.forEach((m, i) => {
+      const isCurrent = existingModel && (m.name === existingModel || m.name.startsWith(existingModel.split(':')[0]!));
+      const marker = isCurrent ? c.green(' ← 上次使用') : '';
+      const size = m.size ? c.dim(` (${m.size})`) : '';
+      info(`  ${c.bold(`[${i + 1}]`)}  ${c.cyan(m.name)}${size}${marker}`);
     });
     blank();
-    const input = await rl.question(
-      `  手动输入模型名称 [${defaultModel}]：`
-    );
-    return input.trim() || defaultModel;
+
+    // Default: first detected model (not a hardcoded name)
+    const defaultModel = existingModel && available.some(m => m.name === existingModel)
+      ? existingModel
+      : available[0]!.name;
+
+    const raw = await rl.question(`  请选择本地模型 [${defaultModel}]：`);
+    const trimmed = raw.trim();
+
+    if (!trimmed) return defaultModel;
+
+    const idx = parseInt(trimmed, 10);
+    if (!isNaN(idx) && idx >= 1 && idx <= available.length) {
+      return available[idx - 1]!.name;
+    }
+    // Typed a name directly — accept it (may need pull)
+    return trimmed;
   }
 
+  // ── No models detected: ask user, validate, guide pull ────────────────────
   blank();
-  info('  检测到以下本地模型，请选择序号，或直接输入模型名称：');
+  if (serviceRunning) {
+    warn('Ollama 服务运行中，但暂无已下载模型。');
+  }
+  info('  以下是常用模型推荐（按大小排序）：');
   blank();
-  available.forEach((m, i) => {
-    const marker = m.name === defaultModel ? c.green(' ← 当前默认') : '';
-    const size = m.size ? c.dim(` (${m.size})`) : '';
-    info(`  ${c.bold(`[${i + 1}]`)}  ${c.cyan(m.name)}${size}${marker}`);
+  RECOMMENDED_MODELS.forEach((m, i) => {
+    info(`  ${c.bold(`[${i + 1}]`)}  ${c.cyan(m.name.padEnd(18))} ${m.size.padEnd(10)}  ${c.dim(m.desc)}`);
   });
   blank();
 
-  const defaultIdx = available.findIndex((m) => m.name === defaultModel);
-  const hint = defaultIdx >= 0 ? `[${defaultIdx + 1}]` : `[输入模型名]`;
-  const raw = await rl.question(`  请选择本地模型 ${hint}：`);
-  const trimmed = raw.trim();
+  while (true) {
+    const raw = await rl.question(
+      '  输入模型名称（如 qwen2.5:4b），或输入序号选择推荐模型：'
+    );
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
 
-  if (!trimmed) return defaultModel;
+    // Numeric selection from recommended list
+    const idx = parseInt(trimmed, 10);
+    const selected = (!isNaN(idx) && idx >= 1 && idx <= RECOMMENDED_MODELS.length)
+      ? RECOMMENDED_MODELS[idx - 1]!.name
+      : trimmed;
 
-  // Numeric selection
-  const idx = parseInt(trimmed, 10);
-  if (!isNaN(idx) && idx >= 1 && idx <= available.length) {
-    return available[idx - 1]!.name;
+    if (!serviceRunning) {
+      // Can't verify — accept as-is
+      return selected;
+    }
+
+    // Verify the model exists
+    blank();
+    spinner(`检查模型 ${selected} 是否已下载`);
+    const refreshed = await detectOllama(proxyUrl);
+    spinnerEnd();
+
+    const found = refreshed.models.some(
+      m => m.name === selected || m.name.startsWith(selected.split(':')[0]!)
+    );
+
+    if (found) {
+      ok(`模型 ${selected} 已就绪`);
+      return selected;
+    }
+
+    // Model not installed — offer to guide pull
+    blank();
+    warn(`模型 "${selected}" 尚未下载。`);
+    info('  在另一个终端运行以下命令下载：');
+    cmd(`ollama pull ${selected}`);
+    blank();
+
+    const waitPull = await rl.question(
+      '  下载完成后按 Enter 重新检测，输入 "skip" 跳过验证直接使用该名称：'
+    );
+    if (waitPull.trim().toLowerCase() === 'skip') {
+      warn(`将使用 ${selected}（请确保下载完成后再启动 gateway）。`);
+      return selected;
+    }
+
+    // Re-check after user says it's done
+    blank();
+    spinner(`重新检测模型 ${selected}`);
+    const rechecked = await detectOllama(proxyUrl);
+    spinnerEnd();
+
+    const nowFound = rechecked.models.some(
+      m => m.name === selected || m.name.startsWith(selected.split(':')[0]!)
+    );
+
+    if (nowFound) {
+      ok(`模型 ${selected} 已就绪！`);
+      return selected;
+    }
+
+    warn(`仍未检测到 ${selected}，请重新输入或等待下载完成。`);
+    blank();
   }
-
-  // Direct name input
-  return trimmed;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -345,10 +418,8 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
     info('AIPing 是本插件对接的云端 AI 服务（https://aiping.cn/api/v1）。');
     info('云端模型（Kimi-K2.5）仅在复杂请求时使用，约 10% 的请求量。');
     blank();
-    info('获取 API Key 步骤：');
-    info('  1. 访问 ' + c.cyan('https://aiping.cn/user/user-center'));
-    info('  2. 登录后进入「API 密钥」页面');
-    info('  3. 点击「创建密钥」，复制以 sk- 开头的字符串');
+    info('  访问 ' + c.cyan('https://aiping.cn/user/user-center'));
+    info('  复制页面上 ' + c.bold(c.cyan('QC-')) + ' 开头的 API Key');
     blank();
 
     const cloudModel = existingConfig.cloudModel ?? DEFAULT_CONFIG.cloudModel;
@@ -385,45 +456,14 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
       ollamaStatus = await probeOllamaWithRepair(rl, finalLocalUrl);
     }
 
-    // Model selection
+    // Model selection — auto-detect, validate, guide pull if missing
     const localModel = await pickLocalModel(
       rl,
       ollamaStatus.models,
-      existingConfig.localModel ?? DEFAULT_CONFIG.localModel
+      ollamaStatus.serviceRunning,
+      finalLocalUrl,
+      existingConfig.localModel
     );
-
-    // If model not yet downloaded, offer pull command
-    const modelAvailable = ollamaStatus.models.some(
-      (m) => m.name === localModel || m.name.startsWith(localModel.split(':')[0]!)
-    );
-    if (!modelAvailable && ollamaStatus.serviceRunning) {
-      blank();
-      warn(`模型 "${localModel}" 尚未下载到本地。`);
-      info('  请在另一个终端运行以下命令下载（可继续后续配置）：');
-      cmd(`ollama pull ${localModel}`);
-      blank();
-      const waitPull = await rl.question(
-        '  下载完成后按 Enter 继续，或直接回车跳过等待：'
-      );
-      if (waitPull.trim() === '') {
-        // Re-check
-        blank();
-        spinner(`验证模型 ${localModel}`);
-        const refreshed = await detectOllama(finalLocalUrl);
-        spinnerEnd();
-        const nowAvailable = refreshed.models.some(
-          (m) => m.name === localModel || m.name.startsWith(localModel.split(':')[0]!)
-        );
-        if (nowAvailable) {
-          ok(`模型 ${localModel} 已就绪！`);
-        } else {
-          warn(`模型 ${localModel} 未检测到，请确认下载完成后重启插件。`);
-        }
-      }
-    } else if (modelAvailable) {
-      blank();
-      ok(`模型 ${localModel} 已就绪`);
-    }
 
     blank();
     tip('如本地代理需要鉴权（如 LM Studio），填写 Key；无需则直接回车：');

@@ -31,8 +31,8 @@
       "localModel": {
         "type": "string",
         "title": "Local Model Name",
-        "description": "Name of the local model to use (e.g. qwen2.5:4b)",
-        "default": "qwen2.5:4b"
+        "description": "Name of the local model to use (auto-detected from Ollama at setup time)",
+        "default": ""
       },
       "cloudModel": {
         "type": "string",
