@@ -56,11 +56,14 @@ jobs:
 
       # ── Pack and install the plugin ──────────────────────────────────────────
       - name: Pack plugin tarball
-        run: npm pack
+        run: |
+          rm -f aiping.cn-model_router-*.tgz
+          npm pack
+          echo "TARBALL=$(ls aiping.cn-model_router-*.tgz)" >> "$GITHUB_ENV"
 
       - name: Install plugin via OpenClaw CLI
         run: |
-          openclaw plugins install ./aiping.cn-model_router-*.tgz
+          openclaw plugins install "./$TARBALL"
           ls ~/.openclaw/extensions/model_router/dist/index.js
 
       # ── Configure plugin with test API key ───────────────────────────────────
