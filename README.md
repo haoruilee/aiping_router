@@ -102,6 +102,11 @@ ollama run qwen2.5:4b "你好"
 openclaw plugins install @aiping.cn/model_router
 ```
 
+> **npm 安装遇到问题？** 也可以直接从 GitHub Release 安装：
+> ```bash
+> openclaw plugins install https://github.com/haoruilee/aiping_router/releases/latest/download/aiping.cn-model_router-1.2.5.tgz
+> ```
+
 安装完成后终端会提示：
 ```
 尚未配置 AIPing API Key。
@@ -111,6 +116,8 @@ openclaw plugins install @aiping.cn/model_router
 ---
 
 ## 三、运行配置向导
+
+**方式一：交互式向导**（推荐第一次使用）
 
 ```bash
 openclaw model-router-setup
@@ -130,6 +137,27 @@ openclaw model-router-setup
 第 3 步：路由阈值（默认 85，约 90% 走本地）
 
 第 4 步：连通性测试 + 保存配置
+```
+
+**方式二：一行命令（CI/CD 或快速配置）**
+
+```bash
+openclaw model-router-setup \
+  --aiping-api-key "QC-你的Key" \
+  --local-model qwen2.5:4b \
+  --local-proxy-url http://localhost:11434
+```
+
+所有可用参数：
+
+```
+--aiping-api-key <key>   AIPing API Key（必填，跳过交互提问）
+--local-model <model>    本地模型名称（默认 qwen2.5:4b）
+--local-proxy-url <url>  本地 Ollama 地址（默认 http://localhost:11434）
+--local-proxy-key <key>  本地代理鉴权 Key（可选，LM Studio 等需要）
+--cloud-model <model>    云端模型名称（默认 Kimi-K2.5）
+--routing-threshold <n>  路由阈值 0-100（默认 85，越高越偏本地）
+--no-fallback            禁用本地失败时自动切换到云端
 ```
 
 ---

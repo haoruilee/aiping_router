@@ -47,6 +47,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Pack tarball for release attachment
+        run: |
+          npm pack
+          echo "TARBALL=$(ls aiping.cn-model_router-*.tgz)" >> "$GITHUB_ENV"
+
       - name: Verify package version matches tag
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
@@ -68,11 +73,28 @@ jobs:
           name: "v${{ github.ref_name }}"
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
+          files: ${{ env.TARBALL }}
           body: |
             ## 安装
 
+            **从 npm（推荐）**
             ```bash
             openclaw plugins install @aiping.cn/model_router
+            ```
+
+            **从 GitHub Release 直接安装（无需 npm）**
+            ```bash
+            openclaw plugins install https://github.com/haoruilee/aiping_router/releases/download/${{ github.ref_name }}/${{ env.TARBALL }}
+            ```
+
+            **安装后配置（交互式向导）**
+            ```bash
+            openclaw model-router-setup
+            ```
+
+            **或一行完成配置**
+            ```bash
+            openclaw model-router-setup --aiping-api-key "你的Key" --local-model qwen2.5:4b
             ```
 
             查看完整变更记录：[CHANGELOG.md](https://github.com/haoruilee/aiping_router/blob/main/docs/CHANGELOG.md)

@@ -37,16 +37,51 @@ export default function register(api: OpenClawPluginAPI): void {
     ({ program }: { program: CommanderProgram }) => {
       program
         .command('model-router-setup')
-        .description('Configure AIPing Model Router — interactive wizard (中文)')
-        .action(async () => {
-          const current = buildConfig(readPluginConfigFromFile(api.id) ?? api.pluginConfig ?? {});
-          const updated = await runSetupWizard(current);
-          const saved = writePluginConfigToFile(api.id, updated);
-          if (saved) {
-            console.log('\n✅ 配置已保存。重启 gateway 生效：openclaw gateway --restart\n');
+        .description('配置 AIPing Model Router（中文向导 / one-liner flags）')
+        .option('--aiping-api-key <key>',      'AIPing API Key（跳过交互式提问）')
+        .option('--local-model <model>',       '本地模型名称', 'qwen2.5:4b')
+        .option('--local-proxy-url <url>',     '本地 Ollama 地址', 'http://localhost:11434')
+        .option('--local-proxy-key <key>',     '本地代理鉴权 Key（可选）')
+        .option('--cloud-model <model>',       '云端模型名称', 'Kimi-K2.5')
+        .option('--routing-threshold <n>',     '路由阈值 0-100（越高越偏本地）', '85')
+        .option('--no-fallback',               '禁用本地失败时自动切换到云端')
+        .action(async (opts: unknown) => {
+          const o = opts as SetupOptions;
+          if (o.aipingApiKey) {
+            // ── Non-interactive: apply flags directly ─────────────────────
+            const config: PluginConfig = {
+              aipingApiKey:     o.aipingApiKey,
+              localProxyUrl:    o.localProxyUrl    ?? DEFAULT_CONFIG.localProxyUrl,
+              localProxyKey:    o.localProxyKey    ?? '',
+              localModel:       o.localModel       ?? DEFAULT_CONFIG.localModel,
+              cloudModel:       o.cloudModel       ?? DEFAULT_CONFIG.cloudModel,
+              routingThreshold: parseInt(o.routingThreshold ?? '85', 10) || DEFAULT_CONFIG.routingThreshold,
+              fallbackToCloud:  o.fallback         ?? DEFAULT_CONFIG.fallbackToCloud,
+              localTimeoutMs:   DEFAULT_CONFIG.localTimeoutMs,
+              debugRouting:     DEFAULT_CONFIG.debugRouting,
+            };
+            const saved = writePluginConfigToFile(api.id, config);
+            if (saved) {
+              console.log(`\n✅ 配置已保存！`);
+              console.log(`   本地模型: ${config.localModel} → ${config.localProxyUrl}`);
+              console.log(`   云端模型: ${config.cloudModel}`);
+              console.log(`   路由阈值: ${config.routingThreshold}`);
+              console.log(`\n   重启 gateway 生效: openclaw gateway --restart\n`);
+            } else {
+              console.error('\n❌ 无法写入配置文件，请手动配置。\n');
+              process.exit(1);
+            }
           } else {
-            console.log('\n⚠️  请手动设置 API Key：');
-            console.log(`  openclaw plugins config model_router set aipingApiKey "${updated.aipingApiKey}"\n`);
+            // ── Interactive: run full Chinese wizard ──────────────────────
+            const current = buildConfig(readPluginConfigFromFile(api.id) ?? api.pluginConfig ?? {});
+            const updated = await runSetupWizard(current);
+            const saved = writePluginConfigToFile(api.id, updated);
+            if (saved) {
+              console.log('\n✅ 配置已保存。重启 gateway 生效：openclaw gateway --restart\n');
+            } else {
+              console.log('\n⚠️  请手动设置 API Key：');
+              console.log(`  openclaw plugins config model_router set aipingApiKey "${updated.aipingApiKey}"\n`);
+            }
           }
         });
     },
@@ -289,6 +324,16 @@ interface CommanderCommand {
   description(desc: string): CommanderCommand;
   option(flags: string, desc?: string, defaultValue?: unknown): CommanderCommand;
   action(fn: (...args: unknown[]) => void | Promise<void>): CommanderCommand;
+}
+
+interface SetupOptions {
+  aipingApiKey?:     string;
+  localModel?:       string;
+  localProxyUrl?:    string;
+  localProxyKey?:    string;
+  cloudModel?:       string;
+  routingThreshold?: string;
+  fallback?:         boolean;
 }
 
 interface PluginLogger {
