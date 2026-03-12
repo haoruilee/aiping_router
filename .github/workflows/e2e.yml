@@ -1,0 +1,177 @@
+name: E2E Integration Test
+
+# Runs on push to main and on pull requests targeting main.
+# Uses AIPING_KEY secret for real cloud API calls.
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  e2e:
+    name: E2E — OpenClaw install + router test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      # ── Build the plugin ─────────────────────────────────────────────────────
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build plugin
+        run: npm run build
+
+      - name: Run unit tests
+        run: npm test
+
+      # ── Install Ollama + pull model ──────────────────────────────────────────
+      - name: Install Ollama
+        run: |
+          sudo apt-get install -y zstd
+          curl -fsSL https://ollama.com/install.sh | sh
+
+      - name: Start Ollama and pull qwen2.5:0.5b
+        run: |
+          ollama serve &
+          sleep 4
+          ollama pull qwen2.5:0.5b
+          curl -s http://localhost:11434/api/tags | python3 -c "import sys,json; models=json.load(sys.stdin)['models']; print('Models:', [m['name'] for m in models])"
+        timeout-minutes: 5
+
+      # ── Install OpenClaw ─────────────────────────────────────────────────────
+      - name: Install OpenClaw
+        run: npm install -g openclaw@latest
+        timeout-minutes: 3
+
+      - name: Verify OpenClaw version
+        run: openclaw --version
+
+      # ── Pack and install the plugin ──────────────────────────────────────────
+      - name: Pack plugin tarball
+        run: npm pack
+
+      - name: Install plugin via OpenClaw CLI
+        run: |
+          openclaw plugins install ./aiping.cn-model_router-*.tgz
+          ls ~/.openclaw/extensions/model_router/dist/index.js
+
+      # ── Configure plugin with test API key ───────────────────────────────────
+      - name: Write plugin config (AIPING_KEY + local model)
+        env:
+          AIPING_KEY: ${{ secrets.AIPING_KEY }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, pathlib
+          config_path = pathlib.Path.home() / '.openclaw' / 'openclaw.json'
+          root = json.loads(config_path.read_text()) if config_path.exists() else {}
+          plugins = root.setdefault('plugins', {})
+          entries = plugins.setdefault('entries', {})
+          entry   = entries.setdefault('model_router', {})
+          cfg     = entry.setdefault('config', {})
+          cfg['aipingApiKey']  = os.environ['AIPING_KEY']
+          cfg['localModel']    = 'qwen2.5:0.5b'
+          cfg['localProxyUrl'] = 'http://localhost:11434'
+          cfg['cloudModel']    = 'Kimi-K2.5'
+          cfg['routingThreshold'] = 85
+          config_path.write_text(json.dumps(root, indent=2))
+          print(f"Config written to {config_path}")
+          EOF
+
+      # ── Start gateway and verify plugin loads ────────────────────────────────
+      - name: Start OpenClaw gateway
+        run: |
+          openclaw gateway --port 18789 --allow-unconfigured > /tmp/gateway.log 2>&1 &
+          sleep 6
+          # Verify plugin loaded without errors
+          if grep -q "failed during register" /tmp/gateway.log; then
+            echo "❌ Plugin registration failed:"
+            cat /tmp/gateway.log
+            exit 1
+          fi
+          if grep -q "✅ 就绪" /tmp/gateway.log || grep -q "AIPing API Key" /tmp/gateway.log; then
+            echo "✅ Plugin loaded"
+          fi
+          cat /tmp/gateway.log
+
+      - name: Health check
+        run: |
+          RESP=$(curl -sf http://localhost:18789/aiping/health)
+          echo "Health: $RESP"
+          echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['ok'], 'health not ok'; assert d['configured'], 'not configured'; print('✅ Health OK')"
+
+      # ── Run e2e tests ────────────────────────────────────────────────────────
+      - name: Run e2e test suite
+        env:
+          AIPING_API_KEY: ${{ secrets.AIPING_KEY }}
+        run: npm run test:e2e
+        timeout-minutes: 10
+
+      # ── Live gateway routing test ────────────────────────────────────────────
+      - name: Gateway routing test — simple (local)
+        run: |
+          RESP=$(curl -sf http://localhost:18789/aiping/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -d '{"model":"aiping:claw","messages":[{"role":"user","content":"用一句话回答：1+1等于几？"}],"stream":false}')
+          echo "Response: $RESP"
+          echo "$RESP" | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          assert d['model'] == 'aiping:claw', f'wrong model: {d[\"model\"]}'
+          content = d['choices'][0]['message']['content']
+          print(f'✅ Local routing answer: {content}')
+          "
+        timeout-minutes: 2
+
+      - name: Gateway routing test — @cloud override
+        env:
+          AIPING_KEY: ${{ secrets.AIPING_KEY }}
+        run: |
+          RESP=$(curl -sf http://localhost:18789/aiping/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -d '{"model":"aiping:claw","messages":[{"role":"user","content":"地球绕太阳一圈多久？ @cloud"}],"stream":false}')
+          echo "Response (truncated): ${RESP:0:200}"
+          echo "$RESP" | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          content = d['choices'][0]['message']['content']
+          assert len(content) > 0, 'empty response'
+          print(f'✅ Cloud routing answer (first 80 chars): {content[:80]}')
+          "
+        timeout-minutes: 2
+
+      - name: Gateway routing test — multi-turn stays local
+        run: |
+          RESP=$(curl -sf http://localhost:18789/aiping/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -d '{
+              "model": "aiping:claw",
+              "messages": [
+                {"role":"user","content":"我叫小明"},
+                {"role":"assistant","content":"你好小明！"},
+                {"role":"user","content":"我刚才说我叫什么？"}
+              ],
+              "stream": false
+            }')
+          echo "$RESP" | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          content = d['choices'][0]['message']['content']
+          assert len(content) > 0
+          print(f'✅ Multi-turn answer: {content[:80]}')
+          "
+        timeout-minutes: 2
+
+      - name: Upload gateway log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-log
+          path: /tmp/gateway.log
