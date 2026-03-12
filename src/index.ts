@@ -58,7 +58,7 @@ export default function register(api: OpenClawPluginAPI): void {
   api.registerModelRoute({
     model: 'aiping:claw',
     description:
-      'AIPing 智能路由 — 自动在本地模型和云端 Kimi-2.5 之间切换（约 90% 走本地）',
+      'AIPing 智能路由 — 自动在本地模型和云端 Kimi-K2.5 之间切换（约 90% 走本地）',
 
     async chat(request: ChatRequest): Promise<ChatResponse> {
       return handleChat(request, config);

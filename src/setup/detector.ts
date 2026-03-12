@@ -118,7 +118,7 @@ function formatBytes(bytes: number): string {
 
 const AIPING_BASE = 'https://aiping.cn/api/v1';
 
-export async function detectAiping(apiKey: string, model = 'kimi-2.5'): Promise<AipingStatus> {
+export async function detectAiping(apiKey: string, model = 'Kimi-K2.5'): Promise<AipingStatus> {
   if (!apiKey) {
     return { reachable: false, keyValid: false, model, error: '未提供 API Key' };
   }

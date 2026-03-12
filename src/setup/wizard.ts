@@ -343,7 +343,7 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
     step('第 1 步 / 4  ·  配置 AIPing 云端 API Key');
 
     info('AIPing 是本插件对接的云端 AI 服务（https://aiping.cn/api/v1）。');
-    info('云端模型（Kimi-2.5）仅在复杂请求时使用，约 10% 的请求量。');
+    info('云端模型（Kimi-K2.5）仅在复杂请求时使用，约 10% 的请求量。');
     blank();
     info('获取 API Key 步骤：');
     info('  1. 访问 ' + c.cyan('https://aiping.cn/user/user-center'));

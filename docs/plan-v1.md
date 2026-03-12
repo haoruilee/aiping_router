@@ -11,9 +11,9 @@
 
 ### 1.1 问题陈述
 
-用户在本地（如 MacBook）用 Ollama 跑了一个轻量模型（如 qwen2.5:4b），同时也有权限访问云端强模型（如 Kimi-2.5 via AIPing API）。两个模型分别适合不同复杂度的任务：
+用户在本地（如 MacBook）用 Ollama 跑了一个轻量模型（如 qwen2.5:4b），同时也有权限访问云端强模型（如 Kimi-K2.5 via AIPing API）。两个模型分别适合不同复杂度的任务：
 
-| 场景 | 本地 4B | 云端 Kimi-2.5 |
+| 场景 | 本地 4B | 云端 Kimi-K2.5 |
 |------|---------|--------------|
 | 短对话、日常问答 | ✅ 低延迟，零成本 | ❌ 浪费算力 |
 | 多步推理、代码生成 | ❌ 能力不足 | ✅ 高质量输出 |
@@ -54,7 +54,7 @@
 │               ┌──────────▼┐    ┌▼──────────────┐          │
 │               │  Local    │    │  AIPing Cloud  │          │
 │               │  Adapter  │    │  Adapter       │          │
-│               │  (Ollama) │    │  Kimi-2.5      │          │
+│               │  (Ollama) │    │  Kimi-K2.5      │          │
 │               └──────────┬┘    └┬───────────────┘          │
 │                          │      │                           │
 │                    Fallback: 若 local 失败 → cloud          │
@@ -107,7 +107,7 @@
 
 **决策逻辑**：
 ```
-总分 >= threshold (默认 50) → 路由到云端 (AIPing Kimi-2.5)
+总分 >= threshold (默认 50) → 路由到云端 (AIPing Kimi-K2.5)
 总分 < threshold              → 路由到本地 (Ollama)
 @local 标记                   → 强制本地（忽略分数）
 @cloud 标记                   → 强制云端（忽略分数）
@@ -152,7 +152,7 @@ Authorization: Bearer {aipingApiKey}
 ```
 
 - BASE_URL: `https://aiping.cn/api/v1`
-- 默认模型: `kimi-2.5`（可配置）
+- 默认模型: `Kimi-K2.5`（可配置）
 - 支持流式响应
 - 错误码映射（429 rate limit → 退避重试）
 
@@ -176,7 +176,7 @@ Step 3/4: Routing Settings
   Fallback to cloud if local fails? [yes]: 
 
 Step 4/4: Testing connections...
-  ✅ AIPing Cloud (Kimi-2.5): OK (142ms)
+  ✅ AIPing Cloud (Kimi-K2.5): OK (142ms)
   ✅ Local Ollama (qwen2.5:4b): OK (23ms)
 
 ✅ Setup complete! Use model "aiping:claw" in OpenClaw.
@@ -202,7 +202,7 @@ Step 4/4: Testing connections...
       "aipingApiKey": { "type": "string" },
       "localProxyUrl": { "type": "string", "default": "http://localhost:11434" },
       "localModel": { "type": "string", "default": "qwen2.5:4b" },
-      "cloudModel": { "type": "string", "default": "kimi-2.5" },
+      "cloudModel": { "type": "string", "default": "Kimi-K2.5" },
       "routingThreshold": { "type": "number", "default": 50 },
       "fallbackToCloud": { "type": "boolean", "default": true }
     }

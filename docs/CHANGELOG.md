@@ -69,7 +69,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Multi-turn context length (0–20 pts)
   - Explicit `@local` / `@cloud` override flags
 - `LocalAdapter`: OpenAI-compatible proxy to Ollama (default `http://localhost:11434`)
-- `CloudAdapter`: AIPing API adapter for Kimi-2.5 (BASE_URL `https://aiping.cn/api/v1`)
+- `CloudAdapter`: AIPing API adapter for Kimi-K2.5 (BASE_URL `https://aiping.cn/api/v1`)
 - Full streaming response support (SSE pass-through)
 - Automatic fallback from local to cloud on failure
 - First-run setup wizard with connection testing

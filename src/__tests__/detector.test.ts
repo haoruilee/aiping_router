@@ -1,6 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { detectOllama, detectAiping, RECOMMENDED_MODELS } from '../setup/detector.js';
 
+// Mock child_process so unit tests don't depend on real ollama binary
+vi.mock('child_process', () => ({
+  execSync: vi.fn().mockImplementation((cmd: string) => {
+    if (cmd.includes('--version')) throw new Error('not found');
+    if (cmd.includes('ollama list')) return '';
+    return '';
+  }),
+}));
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers to mock fetch
 // ──────────────────────────────────────────────────────────────────────────────
@@ -100,7 +109,7 @@ describe('detectAiping()', () => {
   });
 
   it('returns keyValid=false immediately when apiKey is empty', async () => {
-    const result = await detectAiping('', 'kimi-2.5');
+    const result = await detectAiping('', 'Kimi-K2.5');
     expect(result.keyValid).toBe(false);
     expect(result.reachable).toBe(false);
     expect(result.error).toContain('API Key');
@@ -118,7 +127,7 @@ describe('detectAiping()', () => {
       ])
     );
 
-    const result = await detectAiping('sk-valid-key', 'kimi-2.5');
+    const result = await detectAiping('sk-valid-key', 'Kimi-K2.5');
     expect(result.reachable).toBe(true);
     expect(result.keyValid).toBe(true);
   });
@@ -129,7 +138,7 @@ describe('detectAiping()', () => {
       mockFetch([{ ok: false, status: 401, body: { error: 'invalid key' } }])
     );
 
-    const result = await detectAiping('sk-bad-key', 'kimi-2.5');
+    const result = await detectAiping('sk-bad-key', 'Kimi-K2.5');
     expect(result.reachable).toBe(true);
     expect(result.keyValid).toBe(false);
     expect(result.errorCode).toBe(401);
@@ -142,7 +151,7 @@ describe('detectAiping()', () => {
       mockFetch([{ ok: false, status: 429, body: { error: 'rate limited' } }])
     );
 
-    const result = await detectAiping('sk-valid-key', 'kimi-2.5');
+    const result = await detectAiping('sk-valid-key', 'Kimi-K2.5');
     expect(result.reachable).toBe(true);
     expect(result.keyValid).toBe(true);
     expect(result.errorCode).toBe(429);
@@ -154,7 +163,7 @@ describe('detectAiping()', () => {
       vi.fn().mockRejectedValue(new Error('fetch failed: ENOTFOUND'))
     );
 
-    const result = await detectAiping('sk-key', 'kimi-2.5');
+    const result = await detectAiping('sk-key', 'Kimi-K2.5');
     expect(result.reachable).toBe(false);
     expect(result.keyValid).toBe(false);
   });

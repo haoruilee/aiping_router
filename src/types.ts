@@ -16,7 +16,7 @@ export const DEFAULT_CONFIG: Omit<PluginConfig, 'aipingApiKey'> = {
   localProxyUrl: 'http://localhost:11434',
   localProxyKey: '',
   localModel: 'qwen2.5:4b',
-  cloudModel: 'kimi-2.5',
+  cloudModel: 'Kimi-K2.5',
   // High threshold keeps ~90% of requests on the local model.
   // Only genuinely heavy requests (long context + complex code + deep reasoning) reach cloud.
   routingThreshold: 85,

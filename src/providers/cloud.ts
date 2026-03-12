@@ -3,7 +3,7 @@ import type { ChatRequest, ChatResponse, PluginConfig } from '../types.js';
 const AIPING_BASE_URL = 'https://aiping.cn/api/v1';
 
 /**
- * CloudAdapter forwards requests to the AIPing API (Kimi-2.5 by default).
+ * CloudAdapter forwards requests to the AIPing API (Kimi-K2.5 by default).
  * The AIPing API is OpenAI-compatible.
  */
 export class CloudAdapter {

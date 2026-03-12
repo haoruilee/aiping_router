@@ -1,6 +1,6 @@
 # @aiping.cn/model_router
 
-> Smart routing between your local Ollama model and AIPing cloud (Kimi-2.5).  
+> Smart routing between your local Ollama model and AIPing cloud (Kimi-K2.5).  
 > One plugin, one virtual model — zero workflow changes.
 
 [![npm version](https://img.shields.io/npm/v/@aiping.cn/model_router)](https://www.npmjs.com/package/@aiping.cn/model_router)
@@ -14,7 +14,7 @@ When you use the `aiping:claw` model in OpenClaw, this plugin automatically deci
 | Destination | When | Why |
 |---|---|---|
 | **Local model** (Ollama, e.g. `qwen2.5:4b`) | Short, simple queries | Low latency, zero cost |
-| **AIPing cloud** (Kimi-2.5) | Complex, long, or multi-turn | High capability |
+| **AIPing cloud** (Kimi-K2.5) | Complex, long, or multi-turn | High capability |
 
 Routing is based on a **5-dimension rule scorer** that runs in < 1ms — no ML inference, no extra processes.
 
@@ -80,7 +80,7 @@ Each request is scored across 5 dimensions:
 | Multi-turn context | 20 | > 6 messages in history |
 | Override directive | — | `@local` or `@cloud` in message |
 
-**Score ≥ threshold (default: 50) → Cloud (Kimi-2.5)**  
+**Score ≥ threshold (default: 50) → Cloud (Kimi-K2.5)**  
 **Score < threshold → Local (Ollama)**
 
 ### Override Routing
@@ -105,7 +105,7 @@ Write a comprehensive analysis of this architecture @cloud
 | `localProxyUrl` | `http://localhost:11434` | Ollama or local proxy base URL |
 | `localProxyKey` | *(empty)* | Optional auth key for local proxy |
 | `localModel` | `qwen2.5:4b` | Local model name in Ollama |
-| `cloudModel` | `kimi-2.5` | Cloud model on AIPing |
+| `cloudModel` | `Kimi-K2.5` | Cloud model on AIPing |
 | `routingThreshold` | `50` | Score threshold (0–100) |
 | `fallbackToCloud` | `true` | Auto-fallback to cloud if local fails |
 | `localTimeoutMs` | `30000` | Local request timeout in ms |

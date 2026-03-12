@@ -2,7 +2,7 @@
   "id": "@aiping.cn/model_router",
   "version": "1.0.0",
   "name": "AIPing Model Router",
-  "description": "Routes 'aiping:claw' model requests between your local Ollama model and AIPing cloud (Kimi-2.5) using fast rule-based scoring.",
+  "description": "Routes 'aiping:claw' model requests between your local Ollama model and AIPing cloud (Kimi-K2.5) using fast rule-based scoring.",
   "extensions": ["dist/index.js"],
   "configSchema": {
     "type": "object",
@@ -37,7 +37,7 @@
         "type": "string",
         "title": "Cloud Model Name",
         "description": "AIPing cloud model to use",
-        "default": "kimi-2.5"
+        "default": "Kimi-K2.5"
       },
       "routingThreshold": {
         "type": "number",
