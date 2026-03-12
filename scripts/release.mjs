@@ -71,9 +71,9 @@ pkg.version = newVersion;
 writeFileSync(PKG_PATH, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
 console.log(bold(`▶ Version bumped: ${cyan(oldVersion)} → ${green(newVersion)}`));
 
-// 4. Commit
+// 4. Commit (dist/ is in .gitignore; CI builds it during publish)
 run('npm run build');
-run(`git add package.json package-lock.json dist/`);
+run(`git add package.json package-lock.json`);
 run(`git commit -m "chore: release v${newVersion}"`);
 console.log(green(`✅ Committed release v${newVersion}\n`));
 
