@@ -87,7 +87,7 @@ function printOllamaStatus(status: OllamaStatus, baseUrl: string): void {
     tip(c.cyan('https://ollama.com/download'));
     blank();
     info('  安装后请重新运行此向导：');
-    cmd('openclaw run aiping:setup');
+    cmd('openclaw run model-router-setup');
   } else if (!status.serviceRunning) {
     warn(`Ollama 已安装，但服务未运行（地址：${baseUrl}）`);
     blank();
@@ -315,7 +315,7 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
   console.log(c.bold('╚══════════════════════════════════════════════════════════╝'));
   blank();
   info('向导将自动检测环境，并引导你修复任何问题，确保安装完即可使用。');
-  info('中途可按 Ctrl+C 退出，稍后运行 ' + c.cyan('openclaw run aiping:setup') + ' 重新配置。');
+  info('中途可按 Ctrl+C 退出，稍后运行 ' + c.cyan('openclaw run model-router-setup') + ' 重新配置。');
   blank();
 
   try {
@@ -531,7 +531,7 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
       console.log(c.red(c.bold('  ⚠️  警告：本地和云端均未就绪')));
       hr();
       info('配置已保存，但当前 aiping:claw 无法处理任何请求。');
-      info('请修复后运行：' + c.cyan(' openclaw run aiping:setup'));
+      info('请修复后运行：' + c.cyan(' openclaw run model-router-setup'));
       blank();
     }
 
@@ -579,7 +579,7 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
     info('  在 OpenClaw 中选择模型 ' + c.bold(c.cyan('"aiping:claw"')) + ' 即可开始使用。');
     blank();
     info('  常用命令：');
-    info(c.dim('  openclaw run aiping:setup                                  # 重新配置'));
+    info(c.dim('  openclaw run model-router-setup                                  # 重新配置'));
     info(c.dim('  openclaw plugins config @aiping.cn/model_router list          # 查看配置'));
     info(c.dim('  openclaw plugins config @aiping.cn/model_router set debugRouting true  # 路由日志'));
     blank();

@@ -1,159 +1,161 @@
 /**
- * @aiping.cn/model_router — OpenClaw Plugin Entry Point
+ * @aiping.cn/model_router — OpenClaw Plugin Entry Point (v1.3)
  *
- * Registers the "aiping:claw" virtual model with the OpenClaw Gateway
- * and routes incoming requests to either a local Ollama model or the
- * AIPing cloud API based on a lightweight 5-dimension rule scorer.
+ * Uses the real OpenClaw plugin API:
+ *   - api.pluginConfig   → plugin's validated config (read-only)
+ *   - api.registerHttpRoute() → proxy endpoint at /aiping/v1/chat/completions
+ *   - api.registerCommand()   → CLI wizard command
  *
- * 默认策略：约 90% 请求走本地模型，只有复杂任务走云端。
+ * After install, configure OpenClaw to use the proxy as a model provider:
+ *   openclaw run model_router:setup
  */
 
-import type { ChatRequest, ChatResponse, PluginConfig } from './types.js';
+import type { IncomingMessage, ServerResponse } from 'http';
+import type { PluginConfig } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 import { Router } from './router/router.js';
-import { LocalAdapter, LocalAdapterError } from './providers/local.js';
+import { LocalAdapter } from './providers/local.js';
 import { CloudAdapter } from './providers/cloud.js';
 import { runSetupWizard } from './setup/wizard.js';
+import * as os from 'os';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // ──────────────────────────────────────────────────────────────────────────────
-// OpenClaw plugin API surface (api object injected by the Gateway at load time)
+// Plugin entry point
 // ──────────────────────────────────────────────────────────────────────────────
 
 export default function register(api: OpenClawPluginAPI): void {
-  let config: PluginConfig = buildConfig(api.getConfig());
+  const cfg = buildConfig(api.pluginConfig ?? {});
 
-  // Re-build config whenever it changes (live reload support)
-  api.onConfigChange((newConfig: Record<string, unknown>) => {
-    config = buildConfig(newConfig);
-  });
-
-  // ── 注册 CLI 命令：重新运行配置向导 ─────────────────────────────────────
+  // ── CLI setup command ────────────────────────────────────────────────────────
   api.registerCommand({
-    name: 'aiping:setup',
+    name: 'model-router-setup',
     description: '运行 AIPing Model Router 中文配置向导',
-    async run() {
-      const updated = await runSetupWizard(config);
-      await api.setConfig(updated as unknown as Record<string, unknown>);
-      config = updated;
+    handler: async () => {
+      const updated = await runSetupWizard(cfg);
+      await savePluginConfig(api, updated);
     },
   });
 
-  // ── 首次安装：自动触发中文配置向导 ─────────────────────────────────────
-  // 如果 aipingApiKey 还没配置，说明是首次安装，自动启动向导。
-  if (!config.aipingApiKey) {
-    runSetupWizard(config)
-      .then(async (updated) => {
-        await api.setConfig(updated as unknown as Record<string, unknown>);
-        config = updated;
-      })
-      .catch((wizardErr: Error) => {
-        console.warn(
-          '[aiping:router] 配置向导退出，稍后可运行 `openclaw run aiping:setup` 重新配置。',
-          wizardErr.message
-        );
-      });
-  }
+  // ── HTTP proxy route for model routing ───────────────────────────────────────
+  // Accessible at: http://localhost:<gateway-port>/api/plugins/model_router/aiping/v1/chat/completions
+  api.registerHttpRoute({
+    path: '/aiping/v1/chat/completions',
+    auth: 'plugin',
+    match: 'exact',
+    handler: async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, corsHeaders());
+        res.end();
+        return true;
+      }
+      if (req.method !== 'POST') {
+        res.writeHead(405, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Method not allowed' }));
+        return true;
+      }
+      try {
+        const body = await readBody(req);
+        const chatReq = JSON.parse(body);
 
-  // ── 注册虚拟模型 aiping:claw ─────────────────────────────────────────────
-  api.registerModelRoute({
-    model: 'aiping:claw',
-    description:
-      'AIPing 智能路由 — 自动在本地模型和云端 Kimi-K2.5 之间切换（约 90% 走本地）',
+        // Re-read config on every request so hot-changes work
+        const liveCfg = buildConfig(api.pluginConfig ?? {});
+        const router = new Router(liveCfg);
+        const decision = router.decide(chatReq);
 
-    async chat(request: ChatRequest): Promise<ChatResponse> {
-      return handleChat(request, config);
-    },
+        const isStream = chatReq.stream === true;
+        const adapter =
+          decision.target === 'local'
+            ? new LocalAdapter(liveCfg)
+            : new CloudAdapter(liveCfg);
 
-    async *chatStream(request: ChatRequest): AsyncGenerator<string> {
-      yield* handleChatStream(request, config);
+        if (isStream) {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+            ...corsHeaders(),
+          });
+          try {
+            for await (const chunk of (decision.target === 'local'
+              ? new LocalAdapter(liveCfg)
+              : new CloudAdapter(liveCfg)).chatStream(chatReq)) {
+              res.write(chunk);
+            }
+          } catch (streamErr) {
+            if (liveCfg.fallbackToCloud && decision.target === 'local') {
+              for await (const chunk of new CloudAdapter(liveCfg).chatStream(chatReq)) {
+                res.write(chunk);
+              }
+            } else {
+              throw streamErr;
+            }
+          }
+          res.end();
+        } else {
+          let response;
+          try {
+            response = await adapter.chat(chatReq);
+          } catch (chatErr) {
+            if (liveCfg.fallbackToCloud && decision.target === 'local') {
+              response = await new CloudAdapter(liveCfg).chat(chatReq);
+            } else {
+              throw chatErr;
+            }
+          }
+          const json = JSON.stringify(response);
+          res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(json),
+            ...corsHeaders(),
+          });
+          res.end(json);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: { message, type: 'router_error' } }));
+        }
+      }
+      return true;
     },
   });
 
-  // ── 注册为默认模型 ────────────────────────────────────────────────────────
-  // 尝试通过 Gateway API 设置默认模型（若 API 可用）
-  if (typeof api.setDefaultModel === 'function') {
-    api.setDefaultModel('aiping:claw').catch(() => {
-      // 静默失败：向导内已提供手动设置方式
-    });
+  // ── Health check route ───────────────────────────────────────────────────────
+  api.registerHttpRoute({
+    path: '/aiping/health',
+    auth: 'plugin',
+    match: 'exact',
+    handler: async (_req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
+      const liveCfg = buildConfig(api.pluginConfig ?? {});
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        ok: true,
+        plugin: '@aiping.cn/model_router',
+        version: '1.3.0',
+        localModel: liveCfg.localModel,
+        cloudModel: liveCfg.cloudModel,
+        routingThreshold: liveCfg.routingThreshold,
+        proxyUrl: '/api/plugins/model_router/aiping/v1/chat/completions',
+      }));
+      return true;
+    },
+  });
+
+  // ── First-run warning ────────────────────────────────────────────────────────
+  if (!cfg.aipingApiKey) {
+    api.logger.warn(
+      '[model_router] AIPing API Key 未配置。运行以下命令完成设置：\n' +
+      '  openclaw run model-router-setup'
+    );
+  } else {
+    api.logger.info(
+      `[model_router] 已就绪。代理端点：/api/plugins/model_router/aiping/v1/chat/completions` +
+      ` | 本地=${cfg.localModel} | 云端=${cfg.cloudModel} | 阈值=${cfg.routingThreshold}`
+    );
   }
-
-  console.log(
-    '[aiping:router] ✅ 已注册虚拟模型 "aiping:claw"' +
-      ` | 阈值=${config.routingThreshold} | 本地=${config.localModel}` +
-      (config.debugRouting ? ' | 路由调试开启' : '')
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Core request handlers
-// ──────────────────────────────────────────────────────────────────────────────
-
-async function handleChat(
-  request: ChatRequest,
-  config: PluginConfig
-): Promise<ChatResponse> {
-  const router = new Router(config);
-  const local = new LocalAdapter(config);
-  const cloud = new CloudAdapter(config);
-
-  const decision = router.decide(request);
-
-  if (decision.target === 'local') {
-    try {
-      return await local.chat(request);
-    } catch (err) {
-      if (config.fallbackToCloud) {
-        console.warn(
-          `[aiping:router] Local failed (${(err as Error).message}), falling back to cloud`
-        );
-        return cloud.chat(request);
-      }
-      throw err;
-    }
-  }
-
-  // Cloud path: no fallback needed (cloud errors surface directly)
-  try {
-    return await cloud.chat(request);
-  } catch (err) {
-    // If cloud fails and fallback is enabled, try local as last resort
-    if (config.fallbackToCloud && !(err instanceof LocalAdapterError)) {
-      console.warn(
-        `[aiping:router] Cloud failed (${(err as Error).message}), trying local as fallback`
-      );
-      return local.chat(request);
-    }
-    throw err;
-  }
-}
-
-async function* handleChatStream(
-  request: ChatRequest,
-  config: PluginConfig
-): AsyncGenerator<string> {
-  const router = new Router(config);
-  const local = new LocalAdapter(config);
-  const cloud = new CloudAdapter(config);
-
-  const decision = router.decide(request);
-
-  if (decision.target === 'local') {
-    try {
-      yield* local.chatStream(request);
-      return;
-    } catch (err) {
-      if (config.fallbackToCloud) {
-        console.warn(
-          `[aiping:router] Local stream failed (${(err as Error).message}), falling back to cloud`
-        );
-        yield* cloud.chatStream(request);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  yield* cloud.chatStream(request);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -162,51 +164,104 @@ async function* handleChatStream(
 
 function buildConfig(raw: Record<string, unknown>): PluginConfig {
   return {
-    aipingApiKey: (raw['aipingApiKey'] as string) ?? '',
-    localProxyUrl:
-      (raw['localProxyUrl'] as string) ?? DEFAULT_CONFIG.localProxyUrl,
-    localProxyKey: (raw['localProxyKey'] as string) ?? '',
-    localModel: (raw['localModel'] as string) ?? DEFAULT_CONFIG.localModel,
-    cloudModel: (raw['cloudModel'] as string) ?? DEFAULT_CONFIG.cloudModel,
-    routingThreshold:
-      typeof raw['routingThreshold'] === 'number'
-        ? raw['routingThreshold']
-        : DEFAULT_CONFIG.routingThreshold,
-    fallbackToCloud:
-      typeof raw['fallbackToCloud'] === 'boolean'
-        ? raw['fallbackToCloud']
-        : DEFAULT_CONFIG.fallbackToCloud,
-    localTimeoutMs:
-      typeof raw['localTimeoutMs'] === 'number'
-        ? raw['localTimeoutMs']
-        : DEFAULT_CONFIG.localTimeoutMs,
-    debugRouting:
-      typeof raw['debugRouting'] === 'boolean'
-        ? raw['debugRouting']
-        : DEFAULT_CONFIG.debugRouting,
+    aipingApiKey:     (raw['aipingApiKey'] as string)  ?? '',
+    localProxyUrl:    (raw['localProxyUrl'] as string)  ?? DEFAULT_CONFIG.localProxyUrl,
+    localProxyKey:    (raw['localProxyKey'] as string)  ?? '',
+    localModel:       (raw['localModel'] as string)     ?? DEFAULT_CONFIG.localModel,
+    cloudModel:       (raw['cloudModel'] as string)     ?? DEFAULT_CONFIG.cloudModel,
+    routingThreshold: typeof raw['routingThreshold'] === 'number' ? raw['routingThreshold'] : DEFAULT_CONFIG.routingThreshold,
+    fallbackToCloud:  typeof raw['fallbackToCloud']  === 'boolean' ? raw['fallbackToCloud']  : DEFAULT_CONFIG.fallbackToCloud,
+    localTimeoutMs:   typeof raw['localTimeoutMs']   === 'number' ? raw['localTimeoutMs']   : DEFAULT_CONFIG.localTimeoutMs,
+    debugRouting:     typeof raw['debugRouting']     === 'boolean' ? raw['debugRouting']     : DEFAULT_CONFIG.debugRouting,
   };
 }
 
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => chunks.push(c));
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
+function corsHeaders(): Record<string, string> {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  };
+}
+
+/** Write updated plugin config back to openclaw.json */
+async function savePluginConfig(
+  api: OpenClawPluginAPI,
+  updated: PluginConfig
+): Promise<void> {
+  const candidates = [
+    path.join(os.homedir(), '.openclaw', 'openclaw.json'),
+    path.join(os.homedir(), '.config', 'openclaw', 'openclaw.json'),
+  ];
+  for (const p of candidates) {
+    try {
+      if (!fs.existsSync(p)) continue;
+      const cfg = JSON.parse(fs.readFileSync(p, 'utf8')) as Record<string, unknown>;
+      const plugins = (cfg['plugins'] as Record<string, unknown>) ?? {};
+      const entries = (plugins['entries'] as Record<string, unknown>) ?? {};
+      const entry = (entries[api.id] as Record<string, unknown>) ?? {};
+      entry['config'] = updated;
+      entries[api.id] = entry;
+      plugins['entries'] = entries;
+      cfg['plugins'] = plugins;
+      fs.writeFileSync(p, JSON.stringify(cfg, null, 2), 'utf8');
+      return;
+    } catch { /* try next */ }
+  }
+  console.warn('[model_router] 无法自动保存配置，请手动运行：');
+  console.warn(`  openclaw plugins config model_router set aipingApiKey "${updated.aipingApiKey}"`);
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
-// OpenClaw Plugin API type stubs
-// These will be provided by the OpenClaw Gateway at runtime.
+// OpenClaw Plugin API types (real shape from 2026.3.11)
 // ──────────────────────────────────────────────────────────────────────────────
 
+interface PluginLogger {
+  info(msg: string): void;
+  warn(msg: string): void;
+  error(msg: string): void;
+  debug(msg: string): void;
+}
+
 interface OpenClawPluginAPI {
-  getConfig(): Record<string, unknown>;
-  setConfig(config: Record<string, unknown>): Promise<void>;
-  onConfigChange(callback: (config: Record<string, unknown>) => void): void;
-  registerCommand(cmd: {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  source: string;
+  config: Record<string, unknown>;        // full OpenClaw config (read-only)
+  pluginConfig: Record<string, unknown>;  // this plugin's validated config
+  runtime: unknown;
+  logger: PluginLogger;
+
+  registerTool(tool: unknown, opts?: unknown): void;
+  registerHook(events: unknown, handler: unknown, opts?: unknown): void;
+  registerHttpRoute(params: {
+    path: string;
+    auth: 'gateway' | 'plugin';
+    match?: 'exact' | 'prefix';
+    handler: (req: IncomingMessage, res: ServerResponse) => Promise<boolean | void>;
+  }): void;
+  registerChannel(registration: unknown): void;
+  registerProvider(provider: unknown): void;
+  registerGatewayMethod(method: string, handler: unknown): void;
+  registerCli(registrar: unknown, opts?: unknown): void;
+  registerService(service: unknown): void;
+  registerCommand(command: {
     name: string;
     description: string;
-    run(): Promise<void>;
+    handler(...args: unknown[]): Promise<void>;
   }): void;
-  registerModelRoute(route: {
-    model: string;
-    description: string;
-    chat(request: ChatRequest): Promise<ChatResponse>;
-    chatStream(request: ChatRequest): AsyncGenerator<string>;
-  }): void;
-  /** Optional: set the Gateway's default model (available in OpenClaw Gateway ≥ 1.x) */
-  setDefaultModel?(model: string): Promise<void>;
+  registerContextEngine(id: string, factory: unknown): void;
+  resolvePath(input: string): string;
+  on(hookName: string, handler: unknown, opts?: unknown): void;
 }

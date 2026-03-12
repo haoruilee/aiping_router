@@ -1,18 +1,19 @@
 {
-  "id": "@aiping.cn/model_router",
+  "id": "model_router",
   "version": "1.0.0",
   "name": "AIPing Model Router",
   "description": "Routes 'aiping:claw' model requests between your local Ollama model and AIPing cloud (Kimi-K2.5) using fast rule-based scoring.",
   "extensions": ["dist/index.js"],
   "configSchema": {
     "type": "object",
-    "required": ["aipingApiKey"],
+    "required": [],
     "properties": {
       "aipingApiKey": {
         "type": "string",
         "title": "AIPing API Key",
         "description": "Your AIPing API key. Get it at https://aiping.cn/user/user-center",
-        "secret": true
+        "secret": true,
+        "default": ""
       },
       "localProxyUrl": {
         "type": "string",
