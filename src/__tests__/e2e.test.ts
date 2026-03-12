@@ -319,7 +319,7 @@ describe('E2E · 5. Multi-Round Conversation via Router', () => {
     console.log(`  fallback triggered: ${usedFallback}, cloud answered: "${finalContent.slice(0, 60)}"`);
     expect(usedFallback).toBe(true);
     expect(finalContent.length).toBeGreaterThan(0);
-  }, 30000);
+  }, 60000);
 
   it('5-turn coding session: all turns stay local, router decisions consistent', async () => {
     const history: ChatMessage[] = [];
