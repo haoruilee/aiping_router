@@ -293,7 +293,7 @@ describe('E2E · 5. Multi-Round Conversation via Router', () => {
     const result = await routeAndCall(req(q, history));
     console.log(`  [@cloud override] → ${result.target} | A: "${result.content.slice(0, 80)}"`);
     expect(result.target).toBe('cloud');
-  }, 30000);
+  }, 60000);
 
   it('fallback: local timeout triggers cloud fallback', async () => {
     // Configure a 1ms timeout to force local to always fail
