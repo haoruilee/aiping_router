@@ -8,6 +8,7 @@ import { DEFAULT_CONFIG } from '../types.js';
 import {
   detectOllama,
   detectAiping,
+  configureOpenClawProvider,
   RECOMMENDED_MODELS,
   type OllamaStatus,
   type AipingStatus,
@@ -575,24 +576,25 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
       blank();
     }
 
-    // Set as default model
+    // ── 自动配置 OpenClaw 使用插件代理 ──────────────────────────────────────
     blank();
     hr();
-    const setDefaultInput = await rl.question(
-      '  是否将 aiping:claw 设为 OpenClaw 默认模型？[yes]：'
-    );
-    const shouldSetDefault = !['no', 'false', 'n', '否', '不'].includes(
-      setDefaultInput.trim().toLowerCase()
-    );
+    info(c.bold('  自动配置 OpenClaw 使用 AIPing 路由器...'));
+    blank();
 
-    if (shouldSetDefault) {
-      const success = await trySetDefaultModel();
-      if (success) {
-        ok('aiping:claw 已设为 OpenClaw 默认模型。');
-      } else {
-        warn('自动写入失败，请手动运行：');
-        cmd('openclaw config set defaultModel "aiping:claw"');
-      }
+    const provResult = configureOpenClawProvider();
+    if (provResult.success) {
+      ok(`已写入 models.providers.${provResult.providerKey} → ${provResult.baseUrl}`);
+      ok(`已将默认模型设为 ${c.cyan(provResult.modelRef)}`);
+      blank();
+      info('  OpenClaw 重启 gateway 后，所有对话将自动走本地+云端路由：');
+      info(c.cyan('  openclaw gateway --restart'));
+    } else {
+      warn(`自动配置失败：${provResult.error}`);
+      blank();
+      info('  请手动在 ~/.openclaw/openclaw.json 添加：');
+      info(c.dim(`  models.providers.aiping.baseUrl = "http://127.0.0.1:18789/aiping/v1"`));
+      info(c.dim(`  agents.defaults.model = "aiping/aiping:claw"`));
     }
 
     // ── 完成摘要 ───────────────────────────────────────────────────────────

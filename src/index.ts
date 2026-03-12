@@ -83,11 +83,22 @@ export default function register(api: OpenClawPluginAPI): void {
             };
             const saved = writePluginConfigToFile(api.id, config);
             if (saved) {
+              // Also auto-configure OpenClaw to route all traffic through plugin
+              const { configureOpenClawProvider } = await import('./setup/detector.js');
+              const provResult = configureOpenClawProvider();
               console.log(`\n✅ 配置已保存！`);
               console.log(`   本地模型: ${config.localModel} → ${config.localProxyUrl}`);
               console.log(`   云端模型: ${config.cloudModel}`);
               console.log(`   路由阈值: ${config.routingThreshold}`);
-              console.log(`\n   重启 gateway 生效: openclaw gateway --restart\n`);
+              if (provResult.success) {
+                console.log(`   OpenClaw 默认模型: ${provResult.modelRef}`);
+                console.log(`\n   重启 gateway 生效: openclaw gateway --restart\n`);
+              } else {
+                console.log(`\n⚠️  自动配置 OpenClaw 失败: ${provResult.error}`);
+                console.log(`   请手动在 openclaw.json 中设置:`);
+                console.log(`   models.providers.aiping.baseUrl = "http://127.0.0.1:18789/aiping/v1"`);
+                console.log(`   agents.defaults.model = "aiping/aiping:claw"\n`);
+              }
             } else {
               console.error('\n❌ 无法写入配置文件，请手动配置。\n');
               process.exit(1);

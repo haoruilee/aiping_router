@@ -1,4 +1,7 @@
 import { execSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -206,3 +209,80 @@ export const RECOMMENDED_MODELS: Array<{ name: string; size: string; desc: strin
   { name: 'phi3.5:mini',  size: '~2.2 GB', desc: 'Microsoft Phi，推理能力强' },
   { name: 'gemma3:4b',    size: '~3.3 GB', desc: 'Google Gemma，均衡性能' },
 ];
+
+// ──────────────────────────────────────────────────────────────────────────────
+// OpenClaw provider auto-configuration
+//
+// Writes models.providers.aiping and agents.defaults.model into openclaw.json
+// so the gateway itself uses the plugin's proxy for ALL model requests.
+// ──────────────────────────────────────────────────────────────────────────────
+
+export interface ProviderConfigResult {
+  success: boolean;
+  providerKey: string;   // e.g. "aiping"
+  modelRef: string;      // e.g. "aiping/aiping:claw"
+  baseUrl: string;
+  error?: string;
+}
+
+export function configureOpenClawProvider(): ProviderConfigResult {
+  const PROVIDER_KEY = 'aiping';
+  const MODEL_ID     = 'aiping:claw';
+  const MODEL_REF    = `${PROVIDER_KEY}/${MODEL_ID}`;
+
+  const candidates = [
+    path.join(os.homedir(), '.openclaw', 'openclaw.json'),
+    path.join(os.homedir(), '.config', 'openclaw', 'openclaw.json'),
+  ];
+
+  const configPath = candidates.find(p => fs.existsSync(p));
+  if (!configPath) {
+    return {
+      success: false,
+      providerKey: PROVIDER_KEY,
+      modelRef: MODEL_REF,
+      baseUrl: '',
+      error: '找不到 openclaw.json，请先运行 openclaw onboard',
+    };
+  }
+
+  try {
+    const root = JSON.parse(fs.readFileSync(configPath, 'utf8')) as Record<string, unknown>;
+
+    // Read the gateway's actual listening port from config (default 18789)
+    const gatewayPort =
+      (root['gateway'] as Record<string, unknown> | undefined)?.['port'] as number | undefined
+      ?? 18789;
+    const baseUrl = `http://127.0.0.1:${gatewayPort}/aiping/v1`;
+
+    // Write models.providers.aiping
+    // OpenClaw's ModelProviderSchema uses 'baseUrl' (not 'url')
+    const models = (root['models'] as Record<string, unknown> | undefined) ?? {};
+    const providers = (models['providers'] as Record<string, unknown> | undefined) ?? {};
+    providers[PROVIDER_KEY] = {
+      baseUrl,
+      api: 'openai-completions',
+      models: [{ id: MODEL_ID, name: 'AIPing 智能路由（本地+云端自动切换）' }],
+    };
+    models['providers'] = providers;
+    root['models'] = models;
+
+    // Write agents.defaults.model
+    const agents = (root['agents'] as Record<string, unknown> | undefined) ?? {};
+    const defaults = (agents['defaults'] as Record<string, unknown> | undefined) ?? {};
+    defaults['model'] = MODEL_REF;
+    agents['defaults'] = defaults;
+    root['agents'] = agents;
+
+    fs.writeFileSync(configPath, JSON.stringify(root, null, 2), 'utf8');
+    return { success: true, providerKey: PROVIDER_KEY, modelRef: MODEL_REF, baseUrl };
+  } catch (e) {
+    return {
+      success: false,
+      providerKey: PROVIDER_KEY,
+      modelRef: MODEL_REF,
+      baseUrl: '',
+      error: (e as Error).message,
+    };
+  }
+}
