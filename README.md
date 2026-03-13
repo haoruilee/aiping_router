@@ -284,6 +284,77 @@ npm run release patch  # 发布新版本（自动测试 → tag → CI publish�
 
 ---
 
+## Benchmark — 持续测试不同模型组合
+
+使用 [PinchBench](https://github.com/pinchbench/skill) 自动化测试混合路由效果，支持本地和 CI 两种运行方式。
+
+### 本地一行运行
+
+```bash
+# 快速冒烟测试（3 个任务，约 2 分钟）
+AIPING_KEY=QC-xxx ./scripts/bench.sh --preset fast
+
+# 默认：qwen2.5:4b local + Kimi-K2.5 cloud
+AIPING_KEY=QC-xxx ./scripts/bench.sh
+
+# 自定义模型组合
+AIPING_KEY=QC-xxx ./scripts/bench.sh \
+  --local-model llama3.2:3b \
+  --cloud-model DeepSeek-V3.2 \
+  --threshold 80
+
+# 纯云端基线
+AIPING_KEY=QC-xxx ./scripts/bench.sh --preset cloud-only
+
+# 查看所有选项
+./scripts/bench.sh --help
+```
+
+### CI 触发（GitHub Actions）
+
+```bash
+# 使用预设
+gh workflow run benchmark.yml -f preset=fast
+
+# 自定义模型（也可在 GitHub UI 手动填写）
+gh workflow run benchmark.yml \
+  -f local_model=qwen2.5:7b \
+  -f cloud_model=DeepSeek-V3.2 \
+  -f threshold=70
+```
+
+### 预设配置（`benchmarks/presets.json`）
+
+| Preset | 本地 | 云端 | 阈值 | 说明 |
+|---|---|---|---|---|
+| `default` | qwen2.5:4b | Kimi-K2.5 | 85 | 均衡推荐 |
+| `fast` | qwen2.5:0.5b | Kimi-K2.5 | 85 | 快速 3 任务验证 |
+| `cloud-only` | qwen2.5:0.5b | Kimi-K2.5 | 0 | 纯云端基线 |
+| `quality-local` | qwen2.5:7b | Kimi-K2.5 | 100 | 纯本地 |
+| `deepseek` | qwen2.5:4b | DeepSeek-V3.2 | 85 | DeepSeek 云端 |
+| `llama-local` | llama3.2:3b | Kimi-K2.5 | 85 | Llama 本地 |
+| `full` | qwen2.5:4b | Kimi-K2.5 | 85 | 全量，2 次/任务 |
+
+新增 preset：在 `benchmarks/presets.json` 追加一条记录即可。
+
+### 上次结果（qwen2.5:0.5b + Kimi-K2.5, automated-only）
+
+```
+  Hybrid  (threshold=85)     33.3%   9 tasks   ← ~90% 走本地
+  Cloud   (threshold=0 )     42.6%   9 tasks   ← 100% 走云端
+  Quality delta: +9.3pp
+
+  task_00_sanity    ✅ 100%   ✅ 100%   44s / 12s
+  task_01_calendar   ❌  0%⏱  ⚠️  83%  125s / 16s
+  task_09_files     ✅ 100%   ✅ 100%   79s / 14s
+  task_11_clawdhub  ✅ 100%   ✅ 100%   92s / 20s
+```
+
+> **关键发现**：路由按文本复杂度分流，短指令（"创建日历事件"）走本地 0.5b 模型，
+> 但小模型缺乏工具调用能力导致失败。更换 qwen2.5:4b 或更大模型可显著改善。
+
+---
+
 ## 链接
 
 - [AIPing API](https://aiping.cn/api/v1)

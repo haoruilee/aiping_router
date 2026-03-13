@@ -1,0 +1,75 @@
+{
+  "_comment": "Named presets for common model configurations. Use with: ./scripts/bench.sh --preset <name>",
+
+  "default": {
+    "description": "Default: qwen2.5:4b local + Kimi-K2.5 cloud (balanced)",
+    "localModel": "qwen2.5:4b",
+    "cloudModel": "Kimi-K2.5",
+    "threshold": 85,
+    "suite": "automated-only",
+    "runs": 1
+  },
+
+  "fast": {
+    "description": "Quick smoke test: smallest local + cloud (sanity only)",
+    "localModel": "qwen2.5:0.5b",
+    "cloudModel": "Kimi-K2.5",
+    "threshold": 85,
+    "suite": "task_00_sanity,task_09_files,task_11_clawdhub",
+    "runs": 1
+  },
+
+  "quality-local": {
+    "description": "Max local quality: qwen2.5:7b local only (threshold=100)",
+    "localModel": "qwen2.5:7b",
+    "cloudModel": "Kimi-K2.5",
+    "threshold": 100,
+    "suite": "automated-only",
+    "runs": 1
+  },
+
+  "cloud-only": {
+    "description": "Pure cloud baseline: all requests go to Kimi-K2.5",
+    "localModel": "qwen2.5:0.5b",
+    "cloudModel": "Kimi-K2.5",
+    "threshold": 0,
+    "suite": "automated-only",
+    "runs": 1
+  },
+
+  "deepseek": {
+    "description": "DeepSeek-V3.2 cloud + qwen2.5:4b local",
+    "localModel": "qwen2.5:4b",
+    "cloudModel": "DeepSeek-V3.2",
+    "threshold": 85,
+    "suite": "automated-only",
+    "runs": 1
+  },
+
+  "llama-local": {
+    "description": "Llama3.2:3b local + Kimi-K2.5 cloud",
+    "localModel": "llama3.2:3b",
+    "cloudModel": "Kimi-K2.5",
+    "threshold": 85,
+    "suite": "automated-only",
+    "runs": 1
+  },
+
+  "phi-local": {
+    "description": "Phi3.5:mini local + Kimi-K2.5 cloud",
+    "localModel": "phi3.5:mini",
+    "cloudModel": "Kimi-K2.5",
+    "threshold": 85,
+    "suite": "automated-only",
+    "runs": 1
+  },
+
+  "full": {
+    "description": "Full suite, 2 runs per task (takes ~60 min)",
+    "localModel": "qwen2.5:4b",
+    "cloudModel": "Kimi-K2.5",
+    "threshold": 85,
+    "suite": "all",
+    "runs": 2
+  }
+}

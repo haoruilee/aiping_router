@@ -1,15 +1,30 @@
 name: PinchBench — Hybrid Model Score
 
-# Run on push to main, on release tags, or manually
 on:
   workflow_dispatch:
     inputs:
+      preset:
+        description: "Preset name from benchmarks/presets.json (overrides individual fields)"
+        required: false
+        default: ""
+      local_model:
+        description: "Local Ollama model (e.g. qwen2.5:4b, llama3.2:3b, phi3.5:mini)"
+        required: false
+        default: "qwen2.5:0.5b"
+      cloud_model:
+        description: "AIPing cloud model (e.g. Kimi-K2.5, DeepSeek-V3.2, Qwen3-32B)"
+        required: false
+        default: "Kimi-K2.5"
+      threshold:
+        description: "Routing threshold 0-100 (85 = ~90% local)"
+        required: false
+        default: "85"
       suite:
-        description: "Tasks to run (automated-only | all | task_00_sanity,task_04_weather,...)"
+        description: "Tasks: automated-only | all | task_00_sanity,task_09_files,..."
         required: false
         default: "automated-only"
       runs:
-        description: "Runs per task (1-3)"
+        description: "Runs per task (1-3, more = more reliable scores)"
         required: false
         default: "1"
   push:
@@ -18,7 +33,9 @@ on:
 
 jobs:
   benchmark:
-    name: Benchmark hybrid vs cloud-only routing
+    name: >-
+      Benchmark ${{ github.event.inputs.local_model || 'qwen2.5:0.5b' }}
+      + ${{ github.event.inputs.cloud_model || 'Kimi-K2.5' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -37,15 +54,31 @@ jobs:
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh && echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
+      # ── Resolve parameters (preset overrides individual fields) ─────────────
+      - name: Resolve benchmark parameters
+        env:
+          INPUT_PRESET:      "${{ github.event.inputs.preset }}"
+          INPUT_LOCAL_MODEL: "${{ github.event.inputs.local_model || 'qwen2.5:0.5b' }}"
+          INPUT_CLOUD_MODEL: "${{ github.event.inputs.cloud_model || 'Kimi-K2.5' }}"
+          INPUT_THRESHOLD:   "${{ github.event.inputs.threshold || '85' }}"
+          INPUT_SUITE:       "${{ github.event.inputs.suite || 'automated-only' }}"
+          INPUT_RUNS:        "${{ github.event.inputs.runs || '1' }}"
+        run: python3 scripts/resolve_params.py
+
       # ── Ollama ───────────────────────────────────────────────────────────────
-      - name: Install Ollama + pull qwen2.5:0.5b
+      - name: Install Ollama
         run: |
           sudo apt-get install -y zstd
           curl -fsSL https://ollama.com/install.sh | sh
+
+      - name: Start Ollama and pull local model
+        run: |
           ollama serve &
           sleep 4
-          ollama pull qwen2.5:0.5b
-        timeout-minutes: 5
+          echo "Pulling $LOCAL_MODEL..."
+          ollama pull "$LOCAL_MODEL"
+          ollama list
+        timeout-minutes: 10
 
       # ── OpenClaw + plugin ────────────────────────────────────────────────────
       - name: Install OpenClaw
@@ -54,12 +87,12 @@ jobs:
 
       - name: Build and install plugin
         run: |
-          npm ci && npm run build && npm pack
-          rm -f aiping.cn-model_router-*.tgz  # remove duplicates first
+          npm ci && npm run build
+          rm -f aiping.cn-model_router-*.tgz
           npm pack
           echo "TARBALL=$(ls aiping.cn-model_router-*.tgz | tail -1)" >> "$GITHUB_ENV"
 
-      - name: Configure plugin + gateway
+      - name: Configure plugin
         env:
           AIPING_KEY: ${{ secrets.AIPING_KEY }}
         run: |
@@ -67,75 +100,69 @@ jobs:
           python3 - <<'EOF'
           import json, os, pathlib
           p = pathlib.Path.home() / '.openclaw' / 'openclaw.json'
-          root = json.loads(p.read_text()) if p.exists() else {}
-          # Plugin config
-          plugins = root.setdefault('plugins', {})
+          d = json.loads(p.read_text()) if p.exists() else {}
+
+          plugins = d.setdefault('plugins', {})
           entries = plugins.setdefault('entries', {})
           entry   = entries.setdefault('model_router', {})
           cfg     = entry.setdefault('config', {})
-          cfg['aipingApiKey']  = os.environ['AIPING_KEY']
-          cfg['localModel']    = 'qwen2.5:0.5b'
-          cfg['localProxyUrl'] = 'http://localhost:11434'
-          cfg['cloudModel']    = 'Kimi-K2.5'
-          cfg['routingThreshold'] = 85
-          cfg['debugRouting']  = False
-          # Disable gateway hot-reload so 'openclaw agents add' during benchmark
-          # doesn't trigger a gateway restart (which would cause lost transcripts)
-          gateway = root.setdefault('gateway', {})
-          reload_cfg = gateway.setdefault('reload', {})
-          reload_cfg['mode'] = 'off'
-          p.write_text(json.dumps(root, indent=2))
-          print("Config written (gateway.reload.mode=off)")
+          cfg['aipingApiKey']     = os.environ['AIPING_KEY']
+          cfg['localModel']       = os.environ['LOCAL_MODEL']
+          cfg['localProxyUrl']    = 'http://localhost:11434'
+          cfg['cloudModel']       = os.environ['CLOUD_MODEL']
+          cfg['routingThreshold'] = int(os.environ['THRESHOLD'])
+          cfg['debugRouting']     = False
+          cfg['fallbackToCloud']  = True
+
+          # Disable hot-reload so agent creation won't restart gateway mid-run
+          d.setdefault('gateway', {}).setdefault('reload', {})['mode'] = 'off'
+
+          p.write_text(json.dumps(d, indent=2))
+          print(f"Config: {cfg['localModel']} + {cfg['cloudModel']}, threshold={cfg['routingThreshold']}")
           EOF
 
-      - name: Start gateway + export token
+      # ── Gateway ──────────────────────────────────────────────────────────────
+      - name: Start gateway and register aiping provider
         run: |
           openclaw gateway --port 18789 --allow-unconfigured > /tmp/gateway.log 2>&1 &
           sleep 8
-          grep -E "agent model|model_router|就绪" /tmp/gateway.log || true
+          grep -E "model_router|就绪|agent model" /tmp/gateway.log | head -5 || true
+
           GW_TOKEN=$(python3 -c "import json; d=json.load(open('$HOME/.openclaw/openclaw.json')); print(d.get('gateway',{}).get('auth',{}).get('token',''))")
           echo "GW_TOKEN=$GW_TOKEN" >> "$GITHUB_ENV"
 
-      # ── Register aiping provider so openclaw can route to our plugin ─────────
-      - name: Register aiping provider in openclaw.json
-        run: |
-          python3 - <<'EOF'
-          import json, pathlib
-
+          python3 - <<EOF
+          import json, os, pathlib
           p = pathlib.Path.home() / '.openclaw' / 'openclaw.json'
           d = json.loads(p.read_text())
-
-          import os
-          gw_token = d.get('gateway', {}).get('auth', {}).get('token', 'aiping-local')
-
           models = d.setdefault('models', {})
           providers = models.setdefault('providers', {})
           providers['aiping'] = {
-            'baseUrl': 'http://127.0.0.1:18789/aiping/v1',
-            'apiKey': gw_token,
-            'auth': 'api-key',
-            'api': 'openai-completions',
-            'models': [{'id': 'aiping:claw', 'name': 'AIPing Router'}],
+              'baseUrl': 'http://127.0.0.1:18789/aiping/v1',
+              'apiKey': '$GW_TOKEN',
+              'auth': 'api-key',
+              'api': 'openai-completions',
+              'models': [{'id': 'aiping:claw', 'name': 'AIPing Router'}],
           }
-          # Set default model so the bench agent inherits it
-          agents = d.setdefault('agents', {})
-          defaults = agents.setdefault('defaults', {})
-          defaults['model'] = 'aiping/aiping:claw'
-
+          d.setdefault('agents', {}).setdefault('defaults', {})['model'] = 'aiping/aiping:claw'
           p.write_text(json.dumps(d, indent=2))
           print("Provider registered: aiping/aiping:claw → http://127.0.0.1:18789/aiping/v1")
           EOF
+
+          # Verify
+          curl -sf http://localhost:18789/aiping/health | python3 -c "
+          import sys,json; d=json.load(sys.stdin)
+          assert d['ok'], f'health check failed: {d}'
+          print(f'✅ Plugin ready: local={d[\"localModel\"]} cloud={d[\"cloudModel\"]} threshold={d[\"routingThreshold\"]}')
+          "
 
       # ── Clone PinchBench ─────────────────────────────────────────────────────
       - name: Clone PinchBench skill
         run: git clone --depth 1 https://github.com/pinchbench/skill.git /tmp/pinchbench
 
-      # ── Run 1: Hybrid (threshold=85, ~90% local) ─────────────────────────────
-      - name: "Run 1/2 — Hybrid router (threshold=85)"
+      # ── Run 1: Hybrid ────────────────────────────────────────────────────────
+      - name: "Run 1/2 — Hybrid (threshold=${{ env.THRESHOLD }})"
         run: |
-          SUITE="${{ github.event.inputs.suite || 'automated-only' }}"
-          RUNS="${{ github.event.inputs.runs || '1' }}"
-          # threshold=85 is already the default from Configure step
           cd /tmp/pinchbench
           uv run scripts/benchmark.py \
             --model "aiping/aiping:claw" \
@@ -146,27 +173,22 @@ jobs:
             2>&1 | tee /tmp/bench_hybrid.log
         timeout-minutes: 25
 
-      # ── Run 2: Cloud-only (threshold=0, 100% cloud via router) ───────────────
-      - name: "Run 2/2 — Cloud-only via router (threshold=0)"
+      # ── Run 2: Cloud-only ────────────────────────────────────────────────────
+      - name: "Run 2/2 — Cloud-only (threshold=0)"
         run: |
-          SUITE="${{ github.event.inputs.suite || 'automated-only' }}"
-          RUNS="${{ github.event.inputs.runs || '1' }}"
-          # Change threshold to 0 (all-cloud) by rewriting config + restarting gateway
+          # Update threshold to 0 and restart gateway
           python3 -c "
-          import json,pathlib
-          p=pathlib.Path.home()/'.openclaw'/'openclaw.json'
-          d=json.loads(p.read_text())
-          d['plugins']['entries']['model_router']['config']['routingThreshold']=0
-          # Re-enable reload temporarily so gateway picks up new threshold
-          d.setdefault('gateway',{}).setdefault('reload',{})['mode']='off'
-          p.write_text(json.dumps(d,indent=2))
+          import json, pathlib
+          p = pathlib.Path.home() / '.openclaw' / 'openclaw.json'
+          d = json.loads(p.read_text())
+          d['plugins']['entries']['model_router']['config']['routingThreshold'] = 0
+          p.write_text(json.dumps(d, indent=2))
           "
-          # Restart the gateway so the new threshold takes effect
-          pkill -f "openclaw-gateway\|openclaw gateway" 2>/dev/null || true
+          pkill -f "openclaw-gateway" 2>/dev/null || true
           sleep 2
           openclaw gateway --port 18789 --allow-unconfigured > /tmp/gateway2.log 2>&1 &
           sleep 8
-          grep -E "agent model|model_router|就绪" /tmp/gateway2.log || true
+          grep -E "阈值=0|threshold=0|就绪" /tmp/gateway2.log | head -3 || true
 
           cd /tmp/pinchbench
           uv run scripts/benchmark.py \
@@ -182,111 +204,96 @@ jobs:
       - name: Generate comparison report
         run: |
           python3 - <<'PYEOF'
-          import json, pathlib, sys
+          import json, pathlib, sys, os
 
-          def load_dir(results_dir: pathlib.Path, label: str):
-              files = sorted(results_dir.glob('*.json'))
+          LOCAL  = os.environ.get('LOCAL_MODEL', '?')
+          CLOUD  = os.environ.get('CLOUD_MODEL', '?')
+          THRESH = os.environ.get('THRESHOLD', '85')
+
+          def load_dir(d, label):
+              files = sorted(pathlib.Path(d).glob('*.json'))
               if not files:
-                  print(f"No result files in {results_dir}")
+                  print(f"No results in {d}")
                   return None
-              d = json.loads(files[0].read_text())
-              tasks  = d.get('tasks', [])
-              scores = []
-              rows   = []
+              data = json.loads(files[0].read_text())
+              tasks = data.get('tasks', [])
+              scores, rows = [], []
               for t in tasks:
-                  mean = t.get('grading', {}).get('mean', 0.0)
-                  scores.append(mean)
-                  icon = '✅' if mean >= 1.0 else '⚠️' if mean > 0 else '❌'
-                  rows.append((t['task_id'], icon, f"{mean*100:.0f}%",
-                               t.get('execution_time', 0),
-                               t.get('timed_out', False)))
-              overall = sum(scores) / len(scores) * 100 if scores else 0
-              return {'label': label, 'overall': overall, 'n': len(tasks),
-                      'rows': rows, 'model': d.get('model', '?')}
+                  m = t.get('grading', {}).get('mean', 0.0)
+                  scores.append(m)
+                  icon = '✅' if m >= 1.0 else '⚠️' if m > 0 else '❌'
+                  rows.append((t['task_id'], icon, f"{m*100:.0f}%",
+                               t.get('execution_time', 0), t.get('timed_out', False)))
+              overall = sum(scores)/len(scores)*100 if scores else 0
+              return {'label': label, 'overall': overall, 'n': len(tasks), 'rows': rows}
 
-          hybrid = load_dir(pathlib.Path('/tmp/results/hybrid'), 'Hybrid (threshold=85)')
-          cloud  = load_dir(pathlib.Path('/tmp/results/cloud'),  'Cloud-only (threshold=0)')
-
+          hybrid = load_dir('/tmp/results/hybrid', f'Hybrid  (threshold={THRESH})')
+          cloud  = load_dir('/tmp/results/cloud',  'Cloud   (threshold=0 )')
           results = [r for r in [hybrid, cloud] if r]
 
           print()
-          print('=' * 70)
-          print('  🦀 PinchBench — Hybrid Router vs Cloud-Only Routing')
-          print('  Model: aiping/aiping:claw  |  Local: qwen2.5:0.5b  |  Cloud: Kimi-K2.5')
-          print('=' * 70)
-          print()
-          print(f"  {'Configuration':<35} {'Score':>8}  {'Tasks':>6}")
-          print(f"  {'-'*35} {'-'*8}  {'-'*6}")
+          print('='*68)
+          print(f'  🦀  {LOCAL} (local)  +  {CLOUD} (cloud)')
+          print('='*68)
+          print(f"  {'Configuration':<35} {'Score':>8}  {'Tasks':>5}")
+          print(f"  {'-'*35} {'-'*8}  {'-'*5}")
           for r in results:
-              print(f"  {r['label']:<35} {r['overall']:>7.1f}%  {r['n']:>6}")
-          print()
+              print(f"  {r['label']:<35} {r['overall']:>7.1f}%  {r['n']:>5}")
 
-          if hybrid and cloud:
-              diff = cloud['overall'] - hybrid['overall']
+          if len(results) == 2:
+              diff = results[1]['overall'] - results[0]['overall']
               sign = '+' if diff >= 0 else ''
-              print(f"  Quality delta (cloud - hybrid): {sign}{diff:.1f}pp")
-              print()
-
-          # Per-task breakdown
-          if len(results) >= 2:
+              print(f"\n  Quality delta (cloud - hybrid): {sign}{diff:.1f}pp")
               r0, r1 = results[0], results[1]
-              d0 = {row[0]: row for row in r0['rows']}
-              d1 = {row[0]: row for row in r1['rows']}
+              d0, d1 = {r[0]: r for r in r0['rows']}, {r[0]: r for r in r1['rows']}
               tasks = sorted(set(list(d0) + list(d1)))
-              print(f"  {'Task':<35} {'Hybrid':>12}  {'Cloud-only':>12}  {'Time(h/c)':>12}")
-              print(f"  {'-'*35} {'-'*12}  {'-'*12}  {'-'*12}")
+              print()
+              print(f"  {'Task':<38} {'Hybrid':>10}  {'Cloud':>10}  {'Time h/c':>10}")
+              print(f"  {'-'*38} {'-'*10}  {'-'*10}  {'-'*10}")
               for tid in tasks:
-                  s0 = d0.get(tid, ('-', '-', '-', 0, False))
-                  s1 = d1.get(tid, ('-', '-', '-', 0, False))
-                  t0 = f"{s0[3]:.0f}s" if isinstance(s0[3], (int,float)) else '-'
-                  t1 = f"{s1[3]:.0f}s" if isinstance(s1[3], (int,float)) else '-'
+                  s0 = d0.get(tid, ('-','-','-',0,False))
+                  s1 = d1.get(tid, ('-','-','-',0,False))
+                  t0 = f"{s0[3]:.0f}s" if isinstance(s0[3],(int,float)) and s0[3]>0 else '-'
+                  t1 = f"{s1[3]:.0f}s" if isinstance(s1[3],(int,float)) and s1[3]>0 else '-'
                   to0 = '⏱' if s0[4] else ''
                   to1 = '⏱' if s1[4] else ''
-                  print(f"  {tid:<35} {s0[1]+' '+s0[2]+to0:>12}  {s1[1]+' '+s1[2]+to1:>12}  {t0+'/'+t1:>12}")
+                  print(f"  {tid:<38} {s0[1]+' '+s0[2]+to0:>10}  {s1[1]+' '+s1[2]+to1:>10}  {t0+'/'+t1:>10}")
+
           print()
-          print('=' * 70)
+          print('='*68)
 
           # Write report
-          report = pathlib.Path('/tmp/benchmark_report.txt')
-          lines = []
-          for r in results:
-              lines.append(f"=== {r['label']} ===")
-              lines.append(f"Overall: {r['overall']:.1f}%  ({r['n']} tasks)")
-              for row in r['rows']:
-                  lines.append(f"  {row[0]}: {row[1]} {row[2]}")
-              lines.append('')
-          report.write_text('\n'.join(lines))
+          summary = {
+              'local_model': LOCAL, 'cloud_model': CLOUD, 'threshold': THRESH,
+              'results': [{'label': r['label'], 'score': r['overall']} for r in results],
+          }
+          pathlib.Path('/tmp/benchmark_report.json').write_text(json.dumps(summary, indent=2))
 
-          # Non-zero exit if hybrid scored 0 AND cloud also scored 0 (something broken)
           if results and all(r['overall'] == 0 for r in results):
-              print("❌ Both configurations scored 0% — something is wrong")
+              print("❌ All scores 0% — check gateway logs")
               sys.exit(1)
           PYEOF
 
-      # ── Sanitize and upload results ──────────────────────────────────────────
-      - name: Sanitize result filenames (remove colons for Windows FS compat)
+      # ── Sanitize and upload ──────────────────────────────────────────────────
+      - name: Sanitize result filenames
         if: always()
-        run: |
-          # Rename any files with colons to use underscores
-          find /tmp/results -name "*:*" -exec bash -c 'mv "$1" "${1//:/_}"' _ {} \;
-          echo "Result files after sanitize:"
-          find /tmp/results -name "*.json" | head -10
+        run: find /tmp/results -name "*:*" -exec bash -c 'mv "$1" "${1//:/_}"' _ {} \; 2>/dev/null || true
 
-      - name: Upload benchmark results
+      - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-results-${{ github.sha }}
+          name: bench-${{ env.LOCAL_MODEL }}-${{ env.CLOUD_MODEL }}-${{ github.sha }}
           path: |
             /tmp/results/
-            /tmp/benchmark_report.txt
+            /tmp/benchmark_report.json
             /tmp/bench_hybrid.log
             /tmp/bench_cloud.log
-          retention-days: 30
+          retention-days: 90
 
       - name: Upload gateway log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: gateway-log-benchmark
-          path: /tmp/gateway.log
+          name: gateway-logs-${{ github.sha }}
+          path: /tmp/gateway*.log
