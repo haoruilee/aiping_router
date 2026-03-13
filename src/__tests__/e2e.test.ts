@@ -37,6 +37,8 @@ const config: PluginConfig = {
   routingThreshold: 85,
   fallbackToCloud:  true,
   debugRouting:     true,
+  // CI runners are CPU-only and slow; give local model more time per request
+  localTimeoutMs:   90000,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -115,7 +115,7 @@ jobs:
         env:
           AIPING_API_KEY: ${{ secrets.AIPING_KEY }}
         run: npm run test:e2e
-        timeout-minutes: 12
+        timeout-minutes: 15
 
       # ── Live gateway routing test ────────────────────────────────────────────
       - name: Gateway routing test — simple (local)
