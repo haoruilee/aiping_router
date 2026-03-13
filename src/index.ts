@@ -145,6 +145,14 @@ export default function register(api: OpenClawPluginAPI): void {
         const router = new Router(liveCfg);
         const decision = router.decide(chatReq);
 
+        const modelName =
+          decision.target === "cloud" ? liveCfg.cloudModel : liveCfg.localModel;
+        api.logger.info(
+          `[model_router] → ${
+            decision.target === "cloud" ? "CLOUD" : "LOCAL/OLLAMA"
+          } (${modelName})`
+        );
+
         if (chatReq.stream === true) {
           res.writeHead(200, {
             'Content-Type': 'text/event-stream',
