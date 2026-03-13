@@ -89,7 +89,7 @@ describe('E2E · 1. Environment Detection', () => {
     expect(status.reachable).toBe(true);
     // 200 OK or 429 rate-limit both count as "key valid"
     expect(status.keyValid || status.errorCode === 429).toBe(true);
-  });
+  }, 20000);
 
   it('LocalAdapter.listModels: returns available model names', async () => {
     const adapter = new LocalAdapter(config);
@@ -218,7 +218,7 @@ describe('E2E · 4. AIPing Cloud (Kimi-K2.5)', () => {
     console.log(`  cloud ping ok=${status.keyValid} latency=${status.latencyMs}ms`);
     expect(status.reachable).toBe(true);
     expect(status.keyValid || status.errorCode === 429).toBe(true);
-  });
+  }, 20000);
 
   it('chat: returns a non-empty response', async () => {
     const response = await cloud.chat(req('用一句话回答：地球绕太阳转一圈需要多久？'));

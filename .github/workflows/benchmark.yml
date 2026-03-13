@@ -279,11 +279,17 @@ jobs:
         if: always()
         run: find /tmp/results -name "*:*" -exec bash -c 'mv "$1" "${1//:/_}"' _ {} \; 2>/dev/null || true
 
+      - name: Compute sanitized artifact name
+        if: always()
+        run: |
+          SAFE_NAME="bench-$(echo "$LOCAL_MODEL" | tr ':' '-')-$(echo "$CLOUD_MODEL" | tr ':' '-')-${GITHUB_SHA::8}"
+          echo "ARTIFACT_NAME=$SAFE_NAME" >> "$GITHUB_ENV"
+
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bench-${{ env.LOCAL_MODEL }}-${{ env.CLOUD_MODEL }}-${{ github.sha }}
+          name: ${{ env.ARTIFACT_NAME }}
           path: |
             /tmp/results/
             /tmp/benchmark_report.json
