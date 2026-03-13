@@ -1,5 +1,22 @@
 import type { ChatRequest, DimensionScore, RuleScorer } from '../types.js';
 
+type LegacyContent = string | null | undefined;
+type StructuredContent = { type: 'text'; text: string }[] | null | undefined;
+
+function toMessageText(content: LegacyContent | StructuredContent): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+      .join('');
+  }
+
+  return '';
+}
+
 // Estimates token count from a string using a simple heuristic (~4 chars per token)
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
@@ -7,7 +24,7 @@ function estimateTokens(text: string): number {
 
 function extractAllText(request: ChatRequest): string {
   return request.messages
-    .map((m) => (typeof m.content === 'string' ? m.content : ''))
+    .map((m) => toMessageText(m.content as LegacyContent | StructuredContent))
     .join('\n');
 }
 
@@ -160,9 +177,9 @@ export class OverrideScorer implements RuleScorer {
       .reverse()
       .find((m) => m.role === 'user');
 
-    const content = typeof lastUserMessage?.content === 'string'
-      ? lastUserMessage.content
-      : '';
+    const content = toMessageText(
+      lastUserMessage?.content as LegacyContent | StructuredContent
+    );
 
     if (/@local\b/i.test(content)) {
       return {
