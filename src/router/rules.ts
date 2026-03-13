@@ -160,9 +160,10 @@ export class OverrideScorer implements RuleScorer {
       .reverse()
       .find((m) => m.role === 'user');
 
-    const content = typeof lastUserMessage?.content === 'string'
-      ? lastUserMessage.content
-      : '';
+    const content =
+      lastUserMessage?.content && typeof lastUserMessage?.content[0].text === "string"
+        ? lastUserMessage.content[0].text
+        : "";
 
     if (/@local\b/i.test(content)) {
       return {

@@ -1,6 +1,6 @@
 {
   "name": "@aiping.cn/model_router",
-  "version": "1.2.9",
+  "version": "1.2.10",
   "description": "OpenClaw plugin: smart routing between local Ollama models and AIPing cloud (Kimi-K2.5). ~90% requests stay local.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

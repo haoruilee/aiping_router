@@ -29,7 +29,10 @@ export const DEFAULT_CONFIG: Omit<PluginConfig, 'aipingApiKey'> = {
 // OpenAI-compatible message structure
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | null;
+  content: {
+    type: "text";
+    text: string;
+  }[] | null;
   name?: string;
 }
 
