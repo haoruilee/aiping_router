@@ -68,7 +68,7 @@ jobs:
           import json, os, pathlib
           p = pathlib.Path.home() / '.openclaw' / 'openclaw.json'
           root = json.loads(p.read_text()) if p.exists() else {}
-          # Plugin config (routing threshold set at run time, not here)
+          # Plugin config
           plugins = root.setdefault('plugins', {})
           entries = plugins.setdefault('entries', {})
           entry   = entries.setdefault('model_router', {})
@@ -79,8 +79,13 @@ jobs:
           cfg['cloudModel']    = 'Kimi-K2.5'
           cfg['routingThreshold'] = 85
           cfg['debugRouting']  = False
+          # Disable gateway hot-reload so 'openclaw agents add' during benchmark
+          # doesn't trigger a gateway restart (which would cause lost transcripts)
+          gateway = root.setdefault('gateway', {})
+          reload_cfg = gateway.setdefault('reload', {})
+          reload_cfg['mode'] = 'off'
           p.write_text(json.dumps(root, indent=2))
-          print("Config written")
+          print("Config written (gateway.reload.mode=off)")
           EOF
 
       - name: Start gateway + export token
@@ -95,41 +100,12 @@ jobs:
       - name: Clone PinchBench skill
         run: git clone --depth 1 https://github.com/pinchbench/skill.git /tmp/pinchbench
 
-      # ── Pre-create bench agent to avoid openclaw.json changes during benchmark ──
-      - name: Pre-create benchmark agent
-        run: |
-          BENCH_WS="/tmp/bench-workspace"
-          mkdir -p "$BENCH_WS"
-          # Create the agent PinchBench will use (slug of aiping/aiping:claw)
-          # This prevents openclaw.json from being modified during benchmark runs
-          # which would trigger gateway restarts and cause lost transcripts
-          openclaw agents add "bench-aiping-aiping:claw" \
-            --model "aiping/aiping:claw" \
-            --workspace "$BENCH_WS" \
-            2>&1 | tail -3
-          sleep 6   # let gateway reload from agent addition stabilise
-
-          # Verify gateway is up and the agent works
-          openclaw agent --agent "bench-aiping-aiping:claw" \
-            --message "Respond with exactly: READY" \
-            2>&1 | tail -5
-          echo "✅ Bench agent ready"
-
       # ── Run 1: Hybrid (threshold=85, ~90% local) ─────────────────────────────
       - name: "Run 1/2 — Hybrid router (threshold=85)"
         run: |
           SUITE="${{ github.event.inputs.suite || 'automated-only' }}"
           RUNS="${{ github.event.inputs.runs || '1' }}"
-          # Set threshold=85 (default, most requests go local)
-          python3 -c "
-          import json,pathlib
-          p=pathlib.Path.home()/'.openclaw'/'openclaw.json'
-          d=json.loads(p.read_text())
-          d['plugins']['entries']['model_router']['config']['routingThreshold']=85
-          p.write_text(json.dumps(d,indent=2))
-          "
-          sleep 6  # let gateway reload config
-
+          # threshold=85 is already the default from Configure step
           cd /tmp/pinchbench
           uv run scripts/benchmark.py \
             --model "aiping/aiping:claw" \
@@ -145,15 +121,22 @@ jobs:
         run: |
           SUITE="${{ github.event.inputs.suite || 'automated-only' }}"
           RUNS="${{ github.event.inputs.runs || '1' }}"
-          # Set threshold=0 → all requests route to cloud
+          # Change threshold to 0 (all-cloud) by rewriting config + restarting gateway
           python3 -c "
           import json,pathlib
           p=pathlib.Path.home()/'.openclaw'/'openclaw.json'
           d=json.loads(p.read_text())
           d['plugins']['entries']['model_router']['config']['routingThreshold']=0
+          # Re-enable reload temporarily so gateway picks up new threshold
+          d.setdefault('gateway',{}).setdefault('reload',{})['mode']='off'
           p.write_text(json.dumps(d,indent=2))
           "
-          sleep 6  # let gateway reload config
+          # Restart the gateway so the new threshold takes effect
+          pkill -f "openclaw-gateway\|openclaw gateway" 2>/dev/null || true
+          sleep 2
+          openclaw gateway --port 18789 --allow-unconfigured > /tmp/gateway2.log 2>&1 &
+          sleep 8
+          grep -E "agent model|model_router|就绪" /tmp/gateway2.log || true
 
           cd /tmp/pinchbench
           uv run scripts/benchmark.py \
