@@ -257,10 +257,22 @@ export function configureOpenClawProvider(): ProviderConfigResult {
 
     // Write models.providers.aiping
     // OpenClaw's ModelProviderSchema uses 'baseUrl' (not 'url')
+    // apiKey + auth are required — use the gateway's own auth token so OpenClaw
+    // can resolve the key. Our plugin route (auth: 'plugin') ignores the bearer
+    // token, but the OpenClaw model system needs a non-empty key to proceed.
     const models = (root['models'] as Record<string, unknown> | undefined) ?? {};
     const providers = (models['providers'] as Record<string, unknown> | undefined) ?? {};
+
+    // Read the gateway auth token to use as the provider API key
+    const gatewayToken =
+      (root['gateway'] as Record<string, unknown> | undefined)
+        ?.['auth'] as Record<string, unknown> | undefined;
+    const apiKey = (gatewayToken?.['token'] as string | undefined) ?? 'aiping-local-proxy';
+
     providers[PROVIDER_KEY] = {
       baseUrl,
+      apiKey,
+      auth: 'api-key',
       api: 'openai-completions',
       models: [{ id: MODEL_ID, name: 'AIPing 智能路由（本地+云端自动切换）' }],
     };

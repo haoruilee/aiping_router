@@ -123,7 +123,7 @@ export default function register(api: OpenClawPluginAPI): void {
   // ── HTTP proxy: /aiping/v1/chat/completions ──────────────────────────────────
   api.registerHttpRoute({
     path: '/aiping/v1/chat/completions',
-    auth: 'plugin',
+    auth: 'gateway',  // gateway validates bearer token; configureOpenClawProvider sets apiKey=gateway-token
     match: 'exact',
     handler: async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
       if (req.method === 'OPTIONS') {
@@ -179,7 +179,7 @@ export default function register(api: OpenClawPluginAPI): void {
   // ── Health / status endpoint ─────────────────────────────────────────────────
   api.registerHttpRoute({
     path: '/aiping/health',
-    auth: 'plugin',
+    auth: 'plugin',   // health check stays open (no sensitive data)
     match: 'exact',
     handler: async (_req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
       const liveCfg = buildConfig(readPluginConfigFromFile(api.id) ?? api.pluginConfig ?? {});
