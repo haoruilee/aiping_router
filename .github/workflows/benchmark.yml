@@ -1,0 +1,265 @@
+name: PinchBench — Hybrid Model Score
+
+# Run manually or on release tags to track quality over versions
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "Tasks to run (automated-only | all | task_00_sanity,task_04_weather,...)"
+        required: false
+        default: "automated-only"
+      runs_per_task:
+        description: "Runs per task (1-3)"
+        required: false
+        default: "1"
+  push:
+    tags: ["v*.*.*"]
+
+jobs:
+  benchmark:
+    name: Benchmark aiping:claw vs cloud baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # ── Install uv (needed by pinchbench) ───────────────────────────────────
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh && echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      # ── Install Ollama + pull model ──────────────────────────────────────────
+      - name: Install Ollama
+        run: |
+          sudo apt-get install -y zstd
+          curl -fsSL https://ollama.com/install.sh | sh
+
+      - name: Start Ollama and pull qwen2.5:0.5b
+        run: |
+          ollama serve &
+          sleep 4
+          ollama pull qwen2.5:0.5b
+        timeout-minutes: 5
+
+      # ── Install OpenClaw ─────────────────────────────────────────────────────
+      - name: Install OpenClaw
+        run: npm install -g openclaw@latest
+        timeout-minutes: 3
+
+      # ── Build and install the plugin ─────────────────────────────────────────
+      - name: Build and install plugin
+        run: |
+          npm ci
+          npm run build
+          npm pack
+          echo "TARBALL=$(ls aiping.cn-model_router-*.tgz)" >> "$GITHUB_ENV"
+
+      - name: Install plugin and configure both models
+        env:
+          AIPING_KEY: ${{ secrets.AIPING_KEY }}
+        run: |
+          openclaw plugins install "./$TARBALL"
+
+          # Configure plugin (aiping:claw router)
+          python3 - <<'EOF'
+          import json, os, pathlib
+          config_path = pathlib.Path.home() / '.openclaw' / 'openclaw.json'
+          root = json.loads(config_path.read_text()) if config_path.exists() else {}
+
+          # Plugin config (router)
+          plugins = root.setdefault('plugins', {})
+          entries = plugins.setdefault('entries', {})
+          entry   = entries.setdefault('model_router', {})
+          cfg     = entry.setdefault('config', {})
+          cfg['aipingApiKey']      = os.environ['AIPING_KEY']
+          cfg['localModel']        = 'qwen2.5:0.5b'
+          cfg['localProxyUrl']     = 'http://localhost:11434'
+          cfg['cloudModel']        = 'Kimi-K2.5'
+          cfg['routingThreshold']  = 85
+          cfg['debugRouting']      = True
+
+          # Cloud-only baseline provider (direct AIPing, no routing)
+          models = root.setdefault('models', {})
+          providers = models.setdefault('providers', {})
+          providers['aiping-cloud'] = {
+            'baseUrl': 'https://aiping.cn/api/v1',
+            'apiKey': os.environ['AIPING_KEY'],
+            'auth': 'api-key',
+            'api': 'openai-completions',
+            'models': [{'id': 'Kimi-K2.5', 'name': 'Kimi-K2.5 (cloud-only baseline)'}],
+          }
+
+          config_path.write_text(json.dumps(root, indent=2))
+          print("Config written")
+          EOF
+
+      # ── Start gateway ────────────────────────────────────────────────────────
+      - name: Start OpenClaw gateway
+        run: |
+          openclaw gateway --port 18789 --allow-unconfigured > /tmp/gateway.log 2>&1 &
+          sleep 8
+          cat /tmp/gateway.log | grep -E "agent model|model_router|就绪|ERROR" || true
+          # Export gateway token
+          GW_TOKEN=$(python3 -c "import json; d=json.load(open('$HOME/.openclaw/openclaw.json')); print(d.get('gateway',{}).get('auth',{}).get('token',''))")
+          echo "GW_TOKEN=$GW_TOKEN" >> "$GITHUB_ENV"
+
+      # ── Clone pinchbench/skill ───────────────────────────────────────────────
+      - name: Clone PinchBench skill
+        run: |
+          git clone --depth 1 https://github.com/pinchbench/skill.git /tmp/pinchbench
+          echo "Cloned PinchBench: $(ls /tmp/pinchbench)"
+
+      # ── Run benchmark: aiping:claw (hybrid local+cloud) ─────────────────────
+      - name: "Benchmark: aiping/aiping:claw (hybrid router)"
+        env:
+          AIPING_KEY: ${{ secrets.AIPING_KEY }}
+        run: |
+          SUITE="${{ github.event.inputs.suite || 'automated-only' }}"
+          RUNS="${{ github.event.inputs.runs_per_task || '1' }}"
+          cd /tmp/pinchbench
+          uv run scripts/benchmark.py \
+            --model "aiping/aiping:claw" \
+            --suite "$SUITE" \
+            --runs "$RUNS" \
+            --output-dir /tmp/results \
+            --no-upload \
+            2>&1 | tee /tmp/bench_hybrid.log
+        timeout-minutes: 30
+
+      # ── Run benchmark: cloud-only baseline ──────────────────────────────────
+      - name: "Benchmark: aiping-cloud/Kimi-K2.5 (cloud-only baseline)"
+        env:
+          AIPING_KEY: ${{ secrets.AIPING_KEY }}
+        run: |
+          SUITE="${{ github.event.inputs.suite || 'automated-only' }}"
+          RUNS="${{ github.event.inputs.runs_per_task || '1' }}"
+          cd /tmp/pinchbench
+          uv run scripts/benchmark.py \
+            --model "aiping-cloud/Kimi-K2.5" \
+            --suite "$SUITE" \
+            --runs "$RUNS" \
+            --output-dir /tmp/results \
+            --no-upload \
+            2>&1 | tee /tmp/bench_cloud.log
+        timeout-minutes: 30
+
+      # ── Generate comparison report ───────────────────────────────────────────
+      - name: Generate comparison report
+        run: |
+          python3 - <<'PYEOF'
+          import json, pathlib, sys
+
+          results_dir = pathlib.Path('/tmp/results')
+          files = sorted(results_dir.glob('*.json'))
+
+          if not files:
+              print("No result files found")
+              sys.exit(1)
+
+          def load_result(path):
+              d = json.loads(path.read_text())
+              model  = d.get('model', 'unknown')
+              tasks  = d.get('tasks', [])
+              eff    = d.get('efficiency', {})
+
+              scores = []
+              task_rows = []
+              for t in tasks:
+                  grading = t.get('grading', {})
+                  mean    = grading.get('mean', 0.0)
+                  scores.append(mean)
+                  status  = '✅' if mean >= 1.0 else '⚠️' if mean > 0 else '❌'
+                  task_rows.append((t['task_id'], status, f"{mean*100:.0f}%", t.get('execution_time', 0)))
+
+              overall = sum(scores) / len(scores) * 100 if scores else 0
+              total_cost = eff.get('total_cost', {}).get('total', 0)
+              total_tokens = eff.get('token_usage', {}).get('total', 0)
+              return {
+                  'model': model,
+                  'overall': overall,
+                  'n_tasks': len(tasks),
+                  'task_rows': task_rows,
+                  'total_cost': total_cost,
+                  'total_tokens': total_tokens,
+              }
+
+          results = [load_result(f) for f in files]
+
+          print()
+          print('=' * 70)
+          print('  🦀 PinchBench Results — Hybrid vs Cloud-Only Comparison')
+          print('=' * 70)
+          print()
+
+          # Summary table
+          print(f"  {'Model':<40} {'Score':>8}  {'Tasks':>6}  {'Cost':>10}")
+          print(f"  {'-'*40} {'-'*8}  {'-'*6}  {'-'*10}")
+          for r in results:
+              cost_str = f"${r['total_cost']:.4f}" if r['total_cost'] else 'n/a'
+              print(f"  {r['model']:<40} {r['overall']:>7.1f}%  {r['n_tasks']:>6}  {cost_str:>10}")
+
+          print()
+
+          # Per-task breakdown
+          if len(results) >= 2:
+              r0, r1 = results[0], results[1]
+              rows0 = {row[0]: row for row in r0['task_rows']}
+              rows1 = {row[0]: row for row in r1['task_rows']}
+              all_tasks = sorted(set(list(rows0.keys()) + list(rows1.keys())))
+
+              print(f"  {'Task':<35} {r0['model'][:18]:>18}  {r1['model'][:18]:>18}")
+              print(f"  {'-'*35} {'-'*18}  {'-'*18}")
+              for tid in all_tasks:
+                  s0 = rows0.get(tid, ('-', '-', '-', 0))
+                  s1 = rows1.get(tid, ('-', '-', '-', 0))
+                  print(f"  {tid:<35} {s0[1]+' '+s0[2]:>18}  {s1[1]+' '+s1[2]:>18}")
+
+          print()
+
+          # Save to file for artifact upload
+          with open('/tmp/benchmark_report.txt', 'w') as f:
+              for r in results:
+                  f.write(f"Model: {r['model']}\n")
+                  f.write(f"Overall: {r['overall']:.1f}%\n")
+                  f.write(f"Tasks: {r['n_tasks']}\n")
+                  for row in r['task_rows']:
+                      f.write(f"  {row[0]}: {row[1]} {row[2]}\n")
+                  f.write('\n')
+
+          # Fail if hybrid model scored 0
+          hybrid = next((r for r in results if 'aiping:claw' in r['model']), None)
+          if hybrid and hybrid['overall'] == 0 and hybrid['n_tasks'] > 0:
+              print("❌ Hybrid model scored 0% — something is wrong")
+              sys.exit(1)
+
+          print('=' * 70)
+          PYEOF
+
+      # ── Upload artifacts ─────────────────────────────────────────────────────
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ github.ref_name }}
+          path: |
+            /tmp/results/
+            /tmp/benchmark_report.txt
+            /tmp/bench_hybrid.log
+            /tmp/bench_cloud.log
+          retention-days: 30
+
+      - name: Upload gateway log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-log-benchmark
+          path: /tmp/gateway.log
