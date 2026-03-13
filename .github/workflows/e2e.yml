@@ -103,6 +103,9 @@ jobs:
             echo "✅ Plugin loaded"
           fi
           cat /tmp/gateway.log
+          # Export gateway auth token for use in subsequent curl steps
+          GW_TOKEN=$(python3 -c "import json; d=json.load(open('$HOME/.openclaw/openclaw.json')); print(d.get('gateway',{}).get('auth',{}).get('token',''))")
+          echo "GW_TOKEN=$GW_TOKEN" >> "$GITHUB_ENV"
 
       - name: Health check
         run: |
@@ -121,6 +124,7 @@ jobs:
       - name: Gateway routing test — simple (local)
         run: |
           RESP=$(curl -sf http://localhost:18789/aiping/v1/chat/completions \
+            -H "Authorization: Bearer $GW_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"model":"aiping:claw","messages":[{"role":"user","content":"用一句话回答：1+1等于几？"}],"stream":false}')
           echo "Response: $RESP"
@@ -138,6 +142,7 @@ jobs:
           AIPING_KEY: ${{ secrets.AIPING_KEY }}
         run: |
           RESP=$(curl -sf http://localhost:18789/aiping/v1/chat/completions \
+            -H "Authorization: Bearer $GW_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"model":"aiping:claw","messages":[{"role":"user","content":"地球绕太阳一圈多久？ @cloud"}],"stream":false}')
           echo "Response (truncated): ${RESP:0:200}"
@@ -153,6 +158,7 @@ jobs:
       - name: Gateway routing test — multi-turn stays local
         run: |
           RESP=$(curl -sf http://localhost:18789/aiping/v1/chat/completions \
+            -H "Authorization: Bearer $GW_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{
               "model": "aiping:claw",
