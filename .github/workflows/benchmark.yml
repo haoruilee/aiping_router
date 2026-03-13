@@ -96,6 +96,36 @@ jobs:
           GW_TOKEN=$(python3 -c "import json; d=json.load(open('$HOME/.openclaw/openclaw.json')); print(d.get('gateway',{}).get('auth',{}).get('token',''))")
           echo "GW_TOKEN=$GW_TOKEN" >> "$GITHUB_ENV"
 
+      # ── Register aiping provider so openclaw can route to our plugin ─────────
+      - name: Register aiping provider in openclaw.json
+        run: |
+          python3 - <<'EOF'
+          import json, pathlib
+
+          p = pathlib.Path.home() / '.openclaw' / 'openclaw.json'
+          d = json.loads(p.read_text())
+
+          import os
+          gw_token = d.get('gateway', {}).get('auth', {}).get('token', 'aiping-local')
+
+          models = d.setdefault('models', {})
+          providers = models.setdefault('providers', {})
+          providers['aiping'] = {
+            'baseUrl': 'http://127.0.0.1:18789/aiping/v1',
+            'apiKey': gw_token,
+            'auth': 'api-key',
+            'api': 'openai-completions',
+            'models': [{'id': 'aiping:claw', 'name': 'AIPing Router'}],
+          }
+          # Set default model so the bench agent inherits it
+          agents = d.setdefault('agents', {})
+          defaults = agents.setdefault('defaults', {})
+          defaults['model'] = 'aiping/aiping:claw'
+
+          p.write_text(json.dumps(d, indent=2))
+          print("Provider registered: aiping/aiping:claw → http://127.0.0.1:18789/aiping/v1")
+          EOF
+
       # ── Clone PinchBench ─────────────────────────────────────────────────────
       - name: Clone PinchBench skill
         run: git clone --depth 1 https://github.com/pinchbench/skill.git /tmp/pinchbench
