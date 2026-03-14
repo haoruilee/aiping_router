@@ -171,14 +171,12 @@ describe('Scorer integration', () => {
 
   it('typical short message scores well below 85 threshold', () => {
     const result = scorer.score(makeRequest('请帮我写一个 hello world'));
-    // Should score < 20; definitely local
     expect(result.totalScore).toBeLessThan(20);
     expect(result.forced).toBeUndefined();
   });
 
   it('medium conversation (6 turns) still scores below 85', () => {
     const result = scorer.score(makeRequest('How do I center a div?', 6));
-    // MultiTurn partial + nothing else → still well below 85
     expect(result.totalScore).toBeLessThan(85);
   });
 

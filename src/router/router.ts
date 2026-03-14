@@ -4,6 +4,7 @@ import type {
   PluginConfig,
 } from '../types.js';
 import { Scorer } from './scorer.js';
+import { DEFAULT_SCORERS, ToolCallScorer } from './rules.js';
 
 export class Router {
   private readonly scorer: Scorer;
@@ -11,7 +12,20 @@ export class Router {
 
   constructor(config: PluginConfig, scorer?: Scorer) {
     this.config = config;
-    this.scorer = scorer ?? new Scorer();
+
+    if (!scorer) {
+      // When preferCloudForTools is enabled, prepend ToolCallScorer so it runs
+      // first and can short-circuit before any other scoring takes place.
+      // (It runs even before @local/@cloud overrides, because tool-use failures
+      //  are almost always wrong — users who know their model supports tools can
+      //  set preferCloudForTools: false.)
+      const scorerList = config.preferCloudForTools
+        ? [new ToolCallScorer(), ...DEFAULT_SCORERS]
+        : DEFAULT_SCORERS;
+      this.scorer = new Scorer(scorerList);
+    } else {
+      this.scorer = scorer;
+    }
   }
 
   decide(request: ChatRequest): RoutingDecision {

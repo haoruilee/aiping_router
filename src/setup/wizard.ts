@@ -514,8 +514,9 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
       cloudModel,
       routingThreshold,
       fallbackToCloud,
-      localTimeoutMs: existingConfig.localTimeoutMs ?? DEFAULT_CONFIG.localTimeoutMs,
-      debugRouting: existingConfig.debugRouting ?? DEFAULT_CONFIG.debugRouting,
+      localTimeoutMs:      existingConfig.localTimeoutMs      ?? DEFAULT_CONFIG.localTimeoutMs,
+      debugRouting:        existingConfig.debugRouting        ?? DEFAULT_CONFIG.debugRouting,
+      preferCloudForTools: existingConfig.preferCloudForTools ?? DEFAULT_CONFIG.preferCloudForTools,
     };
 
     // Full connectivity check

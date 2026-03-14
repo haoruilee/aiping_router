@@ -71,15 +71,16 @@ export default function register(api: OpenClawPluginAPI): void {
               }
             }
             const config: PluginConfig = {
-              aipingApiKey:     o.aipingApiKey,
-              localProxyUrl:    o.localProxyUrl    ?? DEFAULT_CONFIG.localProxyUrl,
-              localProxyKey:    o.localProxyKey    ?? '',
-              localModel:       resolvedLocalModel,
-              cloudModel:       o.cloudModel       ?? DEFAULT_CONFIG.cloudModel,
-              routingThreshold: parseInt(o.routingThreshold ?? '85', 10) || DEFAULT_CONFIG.routingThreshold,
-              fallbackToCloud:  o.fallback         ?? DEFAULT_CONFIG.fallbackToCloud,
-              localTimeoutMs:   DEFAULT_CONFIG.localTimeoutMs,
-              debugRouting:     DEFAULT_CONFIG.debugRouting,
+              aipingApiKey:        o.aipingApiKey,
+              localProxyUrl:       o.localProxyUrl    ?? DEFAULT_CONFIG.localProxyUrl,
+              localProxyKey:       o.localProxyKey    ?? '',
+              localModel:          resolvedLocalModel,
+              cloudModel:          o.cloudModel       ?? DEFAULT_CONFIG.cloudModel,
+              routingThreshold:    parseInt(o.routingThreshold ?? '85', 10) || DEFAULT_CONFIG.routingThreshold,
+              fallbackToCloud:     o.fallback         ?? DEFAULT_CONFIG.fallbackToCloud,
+              localTimeoutMs:      DEFAULT_CONFIG.localTimeoutMs,
+              debugRouting:        DEFAULT_CONFIG.debugRouting,
+              preferCloudForTools: DEFAULT_CONFIG.preferCloudForTools,
             };
             const saved = writePluginConfigToFile(api.id, config);
             if (saved) {
@@ -289,7 +290,8 @@ function buildConfig(raw: Record<string, unknown>): PluginConfig {
     routingThreshold: typeof raw['routingThreshold'] === 'number' ? raw['routingThreshold'] : DEFAULT_CONFIG.routingThreshold,
     fallbackToCloud:  typeof raw['fallbackToCloud']  === 'boolean' ? raw['fallbackToCloud']  : DEFAULT_CONFIG.fallbackToCloud,
     localTimeoutMs:   typeof raw['localTimeoutMs']   === 'number' ? raw['localTimeoutMs']   : DEFAULT_CONFIG.localTimeoutMs,
-    debugRouting:     typeof raw['debugRouting']     === 'boolean' ? raw['debugRouting']     : DEFAULT_CONFIG.debugRouting,
+    debugRouting:          typeof raw['debugRouting']     === 'boolean' ? raw['debugRouting']     : DEFAULT_CONFIG.debugRouting,
+    preferCloudForTools:   typeof raw['preferCloudForTools'] === 'boolean' ? raw['preferCloudForTools'] : DEFAULT_CONFIG.preferCloudForTools,
   };
 }
 

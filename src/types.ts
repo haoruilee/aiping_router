@@ -10,13 +10,21 @@ export interface PluginConfig {
   fallbackToCloud: boolean;
   localTimeoutMs: number;
   debugRouting: boolean;
+  /**
+   * When true (default), any request that contains tool definitions or tool
+   * call messages is automatically forced to cloud — regardless of the routing
+   * threshold. Small local models reliably fail to produce well-formed JSON
+   * function calls, so this switch prevents silent failures.
+   *
+   * Turn off only if your local model explicitly supports tool use.
+   */
+  preferCloudForTools: boolean;
 }
 
 export const DEFAULT_CONFIG: Omit<PluginConfig, 'aipingApiKey'> = {
   localProxyUrl: 'http://localhost:11434',
   localProxyKey: '',
   // No hardcoded local model — auto-detected from Ollama at setup time.
-  // Falls back to qwen2.5:4b only if the user never ran the wizard.
   localModel: '',
   cloudModel: 'Kimi-K2.5',
   // High threshold keeps ~90% of requests on the local model.
@@ -24,21 +32,46 @@ export const DEFAULT_CONFIG: Omit<PluginConfig, 'aipingApiKey'> = {
   fallbackToCloud: true,
   localTimeoutMs: 30000,
   debugRouting: false,
+  // Default ON: tool-use requests always go to cloud.
+  preferCloudForTools: true,
 };
 
-// OpenAI-compatible message structure
+// ── OpenAI-compatible message structure (with tool call extensions) ─────────
+
+export interface ToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: {
-    type: "text";
-    text: string;
-  }[] | null;
+  content: string | null;
   name?: string;
+  /** Present on assistant messages when the model requests a tool call. */
+  tool_calls?: ToolCall[];
+  /** Present on tool messages as a reference to the originating tool_call.id. */
+  tool_call_id?: string;
+}
+
+export interface ToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters?: unknown;
+  };
 }
 
 export interface ChatRequest {
   model: string;
   messages: ChatMessage[];
+  /** When present, the model may call these tools. */
+  tools?: ToolDefinition[];
+  tool_choice?: unknown;
   stream?: boolean;
   temperature?: number;
   max_tokens?: number;

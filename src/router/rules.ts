@@ -210,7 +210,68 @@ export class OverrideScorer implements RuleScorer {
   }
 }
 
-// Default set of rule scorers (ordered by processing speed, cheapest first)
+/**
+ * Tool Call Scorer (default ON via preferCloudForTools config)
+ *
+ * Forces routing to cloud when the request contains:
+ *   - A `tools` array (the model is being asked to call tools)
+ *   - Any `role: "tool"` message (a tool has already been called)
+ *   - Any assistant message with `tool_calls` (model selected a tool)
+ *
+ * Rationale: most local models (< 7B) struggle to produce well-formed
+ * JSON function calls reliably. Forcing cloud here prevents silent failures
+ * and retry loops in OpenClaw agent sessions.
+ *
+ * This scorer uses the `forced` mechanism (same as @cloud/@local directives)
+ * so it bypasses the numeric threshold entirely. Users can still override
+ * individual requests with `@local`.
+ */
+export class ToolCallScorer implements RuleScorer {
+  readonly name = 'tool_call_detection';
+  readonly maxScore = 0; // uses forced routing, not additive score
+
+  score(request: ChatRequest): DimensionScore & { forced?: 'cloud' } {
+    // 1. Request includes tool definitions (agent about to call tools)
+    const hasToolDefs = Array.isArray(request.tools) && request.tools.length > 0;
+
+    // 2. Conversation contains a tool result message (tool has been called)
+    const hasToolMessage = request.messages.some(m => m.role === 'tool');
+
+    // 3. Last assistant turn already requested tool calls (waiting for results)
+    const hasToolCalls = request.messages.some(
+      m => m.role === 'assistant' &&
+           Array.isArray(m.tool_calls) &&
+           m.tool_calls.length > 0
+    );
+
+    if (hasToolDefs || hasToolMessage || hasToolCalls) {
+      const why = [
+        hasToolDefs    && `tools=[${(request.tools ?? []).map((t: {function?: {name?: string}}) => t.function?.name ?? '?').slice(0, 3).join(',')}]`,
+        hasToolMessage && 'tool-result-in-history',
+        hasToolCalls   && 'assistant-tool-call',
+      ].filter(Boolean).join(', ');
+
+      return {
+        name:    this.name,
+        score:   0,
+        maxScore: this.maxScore,
+        reason:  `Tool use detected (${why}) → forcing cloud for reliable function calls`,
+        forced:  'cloud',
+      };
+    }
+
+    return {
+      name:    this.name,
+      score:   0,
+      maxScore: this.maxScore,
+      reason:  'No tool use detected',
+    };
+  }
+}
+
+// Default set of rule scorers (ordered by processing speed, cheapest first).
+// ToolCallScorer is NOT included here — it's conditionally added by Router
+// based on the preferCloudForTools config flag.
 export const DEFAULT_SCORERS: RuleScorer[] = [
   new OverrideScorer(),
   new MultiTurnContextScorer(),
