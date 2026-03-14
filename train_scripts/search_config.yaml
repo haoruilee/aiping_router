@@ -1,0 +1,123 @@
+# =============================================================================
+# search_config.yaml — Parameter search configuration
+#
+# Edit this file to control:
+#   - Which local models to evaluate (from ModelScope)
+#   - Which cloud models to try
+#   - Which routing thresholds/rules to explore
+#   - Genetic algorithm hyperparameters
+#   - Fitness weights (accuracy vs speed vs cost)
+# =============================================================================
+
+# ── Local model candidates (downloaded from ModelScope via Ollama) ─────────────
+# Format: modelscope_path, ollama_tag, min_vram_gb
+local_models:
+  - id: "qwen2.5:0.5b"
+    modelscope: "ggml-org/Qwen2.5-0.5B-Instruct-GGUF"
+    file: "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+    min_vram_gb: 1
+
+  - id: "qwen2.5:1.5b"
+    modelscope: "ggml-org/Qwen2.5-1.5B-Instruct-GGUF"
+    file: "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+    min_vram_gb: 2
+
+  - id: "qwen2.5:3b"
+    modelscope: "ggml-org/Qwen2.5-3B-Instruct-GGUF"
+    file: "qwen2.5-3b-instruct-q4_k_m.gguf"
+    min_vram_gb: 3
+
+  - id: "qwen2.5:7b"
+    modelscope: "ggml-org/Qwen2.5-7B-Instruct-GGUF"
+    file: "qwen2.5-7b-instruct-q4_k_m.gguf"
+    min_vram_gb: 6
+
+  - id: "qwen2.5-vl:3b"
+    modelscope: "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF"
+    file: "qwen2.5-vl-3b-instruct-q4_k_m.gguf"
+    min_vram_gb: 4
+
+  - id: "qwen2.5-coder:7b"
+    modelscope: "ggml-org/Qwen2.5-Coder-7B-Instruct-GGUF"
+    file: "qwen2.5-coder-7b-instruct-q4_k_m.gguf"
+    min_vram_gb: 6
+
+  - id: "llama3.2:3b"
+    modelscope: "ggml-org/Llama-3.2-3B-Instruct-GGUF"
+    file: "llama-3.2-3b-instruct-q4_k_m.gguf"
+    min_vram_gb: 3
+
+  - id: "deepseek-r1:7b"
+    modelscope: "ggml-org/DeepSeek-R1-Distill-Qwen-7B-GGUF"
+    file: "deepseek-r1-distill-qwen-7b-q4_k_m.gguf"
+    min_vram_gb: 6
+
+  - id: "phi3.5:mini"
+    modelscope: "ggml-org/Phi-3.5-mini-instruct-GGUF"
+    file: "phi-3.5-mini-instruct-q4_k_m.gguf"
+    min_vram_gb: 3
+
+  - id: "gemma3:4b"
+    modelscope: "ggml-org/gemma-3-4b-it-GGUF"
+    file: "gemma-3-4b-it-q4_k_m.gguf"
+    min_vram_gb: 4
+
+# ── Cloud model candidates (AIPing API) ───────────────────────────────────────
+cloud_models:
+  - "Kimi-K2.5"
+  - "Kimi-K2-Instruct"
+  - "DeepSeek-V3.2"
+  - "DeepSeek-R1"
+  - "Qwen3-32B"
+  - "GLM-4.7"
+
+# ── Routing threshold search space ────────────────────────────────────────────
+threshold:
+  min: 0
+  max: 100
+  step: 5        # granularity for initial population generation
+
+# ── Rule weight search space ──────────────────────────────────────────────────
+# Each rule scorer weight is a multiplier [0.0 .. 2.0]
+# 1.0 = default weight, 0 = disable this rule entirely
+rule_weights:
+  token_count:      { min: 0.0, max: 2.0, default: 1.0 }
+  code_complexity:  { min: 0.0, max: 2.0, default: 1.0 }
+  reasoning_depth:  { min: 0.0, max: 2.0, default: 1.0 }
+  multi_turn:       { min: 0.0, max: 2.0, default: 1.0 }
+
+# ── PinchBench evaluation settings ───────────────────────────────────────────
+benchmark:
+  skill_dir: "/tmp/pinchbench-skill"
+  suite: "automated-only"      # automated-only | all | task_00_sanity,...
+  runs_per_task: 1             # increase to 2-3 for more reliable scores
+  gateway_port: 18789
+  task_timeout_multiplier: 2.0 # extra time for local model on large GPU server
+
+# ── Fitness function weights ──────────────────────────────────────────────────
+# fitness = accuracy*w_acc + ttft_score*w_ttft + tps_score*w_tps - cloud_ratio*w_cost
+# ttft_score = 1 / (1 + avg_ttft_seconds)   (higher is better)
+# tps_score  = avg_tps / 100                 (normalised)
+# cloud_ratio = fraction of requests routed to cloud (0..1)
+fitness_weights:
+  accuracy:    0.60   # PinchBench task score (most important)
+  ttft:        0.20   # Time to first token (penalise slow local models)
+  tps:         0.10   # Tokens per second throughput
+  cost:        0.10   # Cloud usage fraction (penalise expensive routing)
+
+# ── Genetic algorithm hyperparameters ─────────────────────────────────────────
+genetic:
+  population_size:   16    # candidates per generation
+  generations:       8     # total GA iterations
+  elite_frac:        0.25  # top 25% survive unchanged
+  crossover_prob:    0.70  # probability of crossover vs cloning
+  mutation_rate:     0.20  # probability each gene mutates
+  tournament_k:      3     # tournament selection size
+  seed:              42    # reproducibility
+
+# ── Hardware constraints ───────────────────────────────────────────────────────
+hardware:
+  gpu_count: 8
+  vram_per_gpu_gb: 24       # adjust to your GPU model
+  ollama_gpu_layers: 99     # -1 = all layers on GPU
+  parallel_evals: 2         # how many configs to evaluate simultaneously

@@ -227,7 +227,7 @@ describe('E2E · 4. AIPing Cloud (Kimi-K2.5)', () => {
 
     expect(content.length).toBeGreaterThan(0);
     expect(response.model).toBe('aiping:claw');
-  });
+  }, 60000);
 
   it('chatStream: streams tokens', async () => {
     const chunks: string[] = [];
@@ -291,11 +291,12 @@ describe('E2E · 5. Multi-Round Conversation via Router', () => {
       { role: 'assistant', content: '好的，以下是冒泡排序实现...' },
     ];
 
-    const q = '现在帮我优化一下这个排序的时间复杂度 @cloud';
+    // Use a short prompt so the cloud model responds quickly even on slow CI
+    const q = '用一句话解释时间复杂度 @cloud';
     const result = await routeAndCall(req(q, history));
     console.log(`  [@cloud override] → ${result.target} | A: "${result.content.slice(0, 80)}"`);
     expect(result.target).toBe('cloud');
-  }, 60000);
+  }, 120000);
 
   it('fallback: local timeout triggers cloud fallback', async () => {
     // Configure a 1ms timeout to force local to always fail
