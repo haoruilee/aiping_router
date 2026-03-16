@@ -211,60 +211,100 @@ export class OverrideScorer implements RuleScorer {
 }
 
 /**
- * Tool Call Scorer (default ON via preferCloudForTools config)
+ * Tool Call Scorer — routes tool-use requests intelligently.
  *
- * Forces routing to cloud when the request contains:
- *   - A `tools` array (the model is being asked to call tools)
- *   - Any `role: "tool"` message (a tool has already been called)
- *   - Any assistant message with `tool_calls` (model selected a tool)
+ * Mode 'code' (default):
+ *   Detects code-writing tools (write_file, str_replace, create_file, apply_patch…)
+ *   and adds +40 score. Combined with typical code context this pushes complex
+ *   coding tasks over the 85-pt threshold. Simple tools (bash, read_file, search,
+ *   ls…) get no boost and stay on the local model.
  *
- * Rationale: most local models (< 7B) struggle to produce well-formed
- * JSON function calls reliably. Forcing cloud here prevents silent failures
- * and retry loops in OpenClaw agent sessions.
+ * Mode 'all':
+ *   Forces cloud for any request with a tools array — old behaviour, useful when
+ *   the local model cannot produce valid JSON function calls at all.
  *
- * This scorer uses the `forced` mechanism (same as @cloud/@local directives)
- * so it bypasses the numeric threshold entirely. Users can still override
- * individual requests with `@local`.
+ * Mode false:
+ *   Scorer is not added to the pipeline; tool presence has no effect.
  */
+
+// Tools whose primary purpose is writing/editing/generating code or text.
+// If a tool's name contains any of these substrings it's treated as a code tool.
+const CODE_TOOL_PATTERNS = [
+  'write', 'create', 'str_replace', 'replace', 'edit', 'patch', 'insert',
+  'overwrite', 'save', 'generate', 'refactor', 'rewrite',
+];
+
+// Tools that are simple execution/read operations — explicitly NOT code tools.
+const SIMPLE_TOOL_PATTERNS = [
+  'bash', 'run', 'execute', 'read', 'view', 'list', 'ls', 'find',
+  'search', 'grep', 'cat', 'head', 'tail', 'pwd', 'cd', 'fetch', 'get',
+];
+
+export function isCodeTool(toolName: string): boolean {
+  const lower = toolName.toLowerCase();
+  if (SIMPLE_TOOL_PATTERNS.some(p => lower.includes(p))) return false;
+  return CODE_TOOL_PATTERNS.some(p => lower.includes(p));
+}
+
 export class ToolCallScorer implements RuleScorer {
   readonly name = 'tool_call_detection';
-  readonly maxScore = 0; // uses forced routing, not additive score
+  readonly maxScore = 40;
+
+  private readonly mode: 'code' | 'all';
+
+  constructor(mode: 'code' | 'all' = 'code') {
+    this.mode = mode;
+  }
 
   score(request: ChatRequest): DimensionScore & { forced?: 'cloud' } {
-    // 1. Request includes tool definitions (agent about to call tools)
-    const hasToolDefs = Array.isArray(request.tools) && request.tools.length > 0;
+    const tools: Array<{ function?: { name?: string } }> =
+      Array.isArray(request.tools) ? request.tools : [];
 
-    // 2. Conversation contains a tool result message (tool has been called)
-    const hasToolMessage = request.messages.some(m => m.role === 'tool');
+    const hasAnyTool = tools.length > 0 ||
+      request.messages.some(m => m.role === 'tool') ||
+      request.messages.some(
+        m => m.role === 'assistant' &&
+             Array.isArray(m.tool_calls) &&
+             m.tool_calls.length > 0
+      );
 
-    // 3. Last assistant turn already requested tool calls (waiting for results)
-    const hasToolCalls = request.messages.some(
-      m => m.role === 'assistant' &&
-           Array.isArray(m.tool_calls) &&
-           m.tool_calls.length > 0
-    );
+    if (!hasAnyTool) {
+      return { name: this.name, score: 0, maxScore: this.maxScore, reason: '无工具调用' };
+    }
 
-    if (hasToolDefs || hasToolMessage || hasToolCalls) {
-      const why = [
-        hasToolDefs    && `tools=[${(request.tools ?? []).map((t: {function?: {name?: string}}) => t.function?.name ?? '?').slice(0, 3).join(',')}]`,
-        hasToolMessage && 'tool-result-in-history',
-        hasToolCalls   && 'assistant-tool-call',
-      ].filter(Boolean).join(', ');
-
+    // ── Mode 'all': force everything to cloud ────────────────────────────────
+    if (this.mode === 'all') {
+      const toolNames = tools.map(t => t.function?.name ?? '?').slice(0, 3).join(',');
       return {
         name:    this.name,
         score:   0,
         maxScore: this.maxScore,
-        reason:  `Tool use detected (${why}) → forcing cloud for reliable function calls`,
+        reason:  `all-mode: 检测到工具调用 [${toolNames}] → 强制走云端`,
         forced:  'cloud',
       };
     }
 
+    // ── Mode 'code': score boost only for code-writing tools ─────────────────
+    const codeTools = tools.filter(t => isCodeTool(t.function?.name ?? ''));
+    const simpleTools = tools.filter(t => !isCodeTool(t.function?.name ?? ''));
+
+    if (codeTools.length > 0) {
+      const names = codeTools.map(t => t.function?.name ?? '?').slice(0, 3).join(',');
+      return {
+        name:    this.name,
+        score:   this.maxScore,  // +40 pts — nudges code tasks toward cloud
+        maxScore: this.maxScore,
+        reason:  `代码写入工具 [${names}] +40分（与代码上下文叠加趋向云端）`,
+      };
+    }
+
+    // Simple tools only — no score boost, stay local
+    const names = simpleTools.map(t => t.function?.name ?? '?').slice(0, 3).join(',');
     return {
       name:    this.name,
       score:   0,
       maxScore: this.maxScore,
-      reason:  'No tool use detected',
+      reason:  `简单工具 [${names}]（bash/read/search），不加分，走本地`,
     };
   }
 }

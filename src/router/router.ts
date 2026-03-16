@@ -14,13 +14,9 @@ export class Router {
     this.config = config;
 
     if (!scorer) {
-      // When preferCloudForTools is enabled, prepend ToolCallScorer so it runs
-      // first and can short-circuit before any other scoring takes place.
-      // (It runs even before @local/@cloud overrides, because tool-use failures
-      //  are almost always wrong — users who know their model supports tools can
-      //  set preferCloudForTools: false.)
-      const scorerList = config.preferCloudForTools
-        ? [new ToolCallScorer(), ...DEFAULT_SCORERS]
+      const mode = config.preferCloudForTools;
+      const scorerList = mode
+        ? [new ToolCallScorer(mode === 'all' ? 'all' : 'code'), ...DEFAULT_SCORERS]
         : DEFAULT_SCORERS;
       this.scorer = new Scorer(scorerList);
     } else {

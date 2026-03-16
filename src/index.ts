@@ -291,7 +291,12 @@ function buildConfig(raw: Record<string, unknown>): PluginConfig {
     fallbackToCloud:  typeof raw['fallbackToCloud']  === 'boolean' ? raw['fallbackToCloud']  : DEFAULT_CONFIG.fallbackToCloud,
     localTimeoutMs:   typeof raw['localTimeoutMs']   === 'number' ? raw['localTimeoutMs']   : DEFAULT_CONFIG.localTimeoutMs,
     debugRouting:          typeof raw['debugRouting']     === 'boolean' ? raw['debugRouting']     : DEFAULT_CONFIG.debugRouting,
-    preferCloudForTools:   typeof raw['preferCloudForTools'] === 'boolean' ? raw['preferCloudForTools'] : DEFAULT_CONFIG.preferCloudForTools,
+    preferCloudForTools: (() => {
+      const v = raw['preferCloudForTools'];
+      if (v === 'all') return 'all' as const;
+      if (v === false || v === 'false') return false as const;
+      return 'code' as const; // default
+    })(),
   };
 }
 

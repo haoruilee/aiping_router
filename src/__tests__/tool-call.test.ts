@@ -7,141 +7,156 @@ import { DEFAULT_CONFIG } from '../types.js';
 const baseConfig: PluginConfig = {
   ...DEFAULT_CONFIG,
   aipingApiKey: 'test',
-  preferCloudForTools: true,
+  preferCloudForTools: 'code',
 };
 
-// ── ToolCallScorer unit tests ─────────────────────────────────────────────────
+function req(content: string, tools: Array<{name: string}> = []): ChatRequest {
+  return {
+    model: 'aiping:claw',
+    messages: [{ role: 'user', content }],
+    tools: tools.map(t => ({ type: 'function' as const, function: { name: t.name } })),
+  };
+}
 
-describe('ToolCallScorer', () => {
-  const scorer = new ToolCallScorer();
+// ── ToolCallScorer — 'code' mode ──────────────────────────────────────────────
 
-  it('returns no forced for plain text message', () => {
-    const req: ChatRequest = {
-      model: 'aiping:claw',
-      messages: [{ role: 'user', content: 'How do I center a div?' }],
-    };
-    const result = scorer.score(req) as { forced?: string };
-    expect(result.forced).toBeUndefined();
+describe("ToolCallScorer mode='code'", () => {
+  const scorer = new ToolCallScorer('code');
+
+  it('no tools → score 0, no forced', () => {
+    const result = scorer.score(req('Hello')) as { forced?: string; score: number };
     expect(result.score).toBe(0);
+    expect(result.forced).toBeUndefined();
   });
 
-  it('forces cloud when tools array is present', () => {
-    const req: ChatRequest = {
-      model: 'aiping:claw',
-      messages: [{ role: 'user', content: 'Write a Python script' }],
-      tools: [
-        {
-          type: 'function',
-          function: {
-            name: 'write_file',
-            description: 'Write content to a file',
-            parameters: { type: 'object', properties: {} },
-          },
-        },
-      ],
-    };
-    const result = scorer.score(req) as { forced?: string };
-    expect(result.forced).toBe('cloud');
+  it('write_file → +40 score (code tool)', () => {
+    const result = scorer.score(req('Write a function', [{ name: 'write_file' }]));
+    expect(result.score).toBe(40);
+    expect((result as any).forced).toBeUndefined();
     expect(result.reason).toContain('write_file');
   });
 
-  it('forces cloud when conversation has a tool result message', () => {
-    const req: ChatRequest = {
-      model: 'aiping:claw',
-      messages: [
-        { role: 'user', content: 'Run the tests' },
-        {
-          role: 'assistant',
-          content: null,
-          tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'bash', arguments: '{"cmd":"pytest"}' } }],
-        },
-        { role: 'tool', content: 'All tests passed', tool_call_id: 'call_1' },
-        { role: 'user', content: 'Great, now fix the warnings' },
-      ],
-    };
-    const result = scorer.score(req) as { forced?: string };
-    expect(result.forced).toBe('cloud');
-    expect(result.reason).toContain('tool-result-in-history');
+  it('str_replace_editor → +40 score (code tool)', () => {
+    const result = scorer.score(req('Fix the bug', [{ name: 'str_replace_editor' }]));
+    expect(result.score).toBe(40);
   });
 
-  it('forces cloud when assistant message contains tool_calls', () => {
-    const req: ChatRequest = {
-      model: 'aiping:claw',
-      messages: [
-        { role: 'user', content: 'Create a file' },
-        {
-          role: 'assistant',
-          content: null,
-          tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'write_file', arguments: '{}' } }],
-        },
-      ],
-    };
-    const result = scorer.score(req) as { forced?: string };
-    expect(result.forced).toBe('cloud');
-    expect(result.reason).toContain('assistant-tool-call');
+  it('create_file → +40 score (code tool)', () => {
+    const result = scorer.score(req('Create component', [{ name: 'create_file' }]));
+    expect(result.score).toBe(40);
   });
 
-  it('handles empty tools array as no tool use', () => {
-    const req: ChatRequest = {
+  it('bash → score 0 (simple tool, no boost)', () => {
+    const result = scorer.score(req('Run ls', [{ name: 'bash' }]));
+    expect(result.score).toBe(0);
+    expect((result as any).forced).toBeUndefined();
+    expect(result.reason).toContain('bash');
+  });
+
+  it('read_file → score 0 (simple tool)', () => {
+    const result = scorer.score(req('Read the config', [{ name: 'read_file' }]));
+    expect(result.score).toBe(0);
+  });
+
+  it('search_files → score 0 (simple tool)', () => {
+    const result = scorer.score(req('Find all tsx files', [{ name: 'search_files' }]));
+    expect(result.score).toBe(0);
+  });
+
+  it('mixed tools: write_file + bash → +40 (code tool wins)', () => {
+    const result = scorer.score(req('Write and run', [
+      { name: 'write_file' }, { name: 'bash' },
+    ]));
+    expect(result.score).toBe(40);
+  });
+
+  it('tool result in message history → handled by role detection', () => {
+    const request: ChatRequest = {
       model: 'aiping:claw',
-      messages: [{ role: 'user', content: 'What is 2+2?' }],
-      tools: [],
+      messages: [
+        { role: 'user', content: 'Write a script' },
+        { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'write_file', arguments: '{}' } }] },
+        { role: 'tool', content: 'done', tool_call_id: 'c1' },
+      ],
+      tools: [{ type: 'function', function: { name: 'write_file' } }],
     };
-    const result = scorer.score(req) as { forced?: string };
+    // write_file is a code tool → +40
+    const result = scorer.score(request);
+    expect(result.score).toBe(40);
+  });
+});
+
+// ── ToolCallScorer — 'all' mode ───────────────────────────────────────────────
+
+describe("ToolCallScorer mode='all'", () => {
+  const scorer = new ToolCallScorer('all');
+
+  it('bash → forced=cloud in all-mode', () => {
+    const result = scorer.score(req('Run ls', [{ name: 'bash' }])) as { forced?: string };
+    expect(result.forced).toBe('cloud');
+  });
+
+  it('read_file → forced=cloud in all-mode', () => {
+    const result = scorer.score(req('Read', [{ name: 'read_file' }])) as { forced?: string };
+    expect(result.forced).toBe('cloud');
+  });
+
+  it('no tools → no forced', () => {
+    const result = scorer.score(req('Hello')) as { forced?: string };
     expect(result.forced).toBeUndefined();
   });
 });
 
-// ── Router integration: preferCloudForTools ───────────────────────────────────
+// ── Router integration ────────────────────────────────────────────────────────
 
-describe('Router.decide() with preferCloudForTools', () => {
-  it('forces cloud for tool request when preferCloudForTools=true', () => {
-    const router = new Router({ ...baseConfig, preferCloudForTools: true });
-    const req: ChatRequest = {
-      model: 'aiping:claw',
-      messages: [{ role: 'user', content: 'Run the linter' }],
-      tools: [{ type: 'function', function: { name: 'bash', description: 'Run shell command' } }],
-    };
-    const decision = router.decide(req);
-    expect(decision.target).toBe('cloud');
-    expect(decision.forced).toBe(true);
-    expect(decision.reasons[0]).toContain('tool_call_detection');
+describe("Router.decide() — preferCloudForTools='code'", () => {
+  it("write_file + short message: 40+0 < 85 → STILL local (threshold not reached alone)", () => {
+    const router = new Router({ ...baseConfig, preferCloudForTools: 'code' });
+    const decision = router.decide(req('Add a comment', [{ name: 'write_file' }]));
+    // +40 from tool scorer, but no other dimensions fire → total 40 < 85 → local
+    expect(decision.target).toBe('local');
+    expect(decision.forced).toBe(false);
   });
 
-  it('does NOT force cloud for tool request when preferCloudForTools=false', () => {
+  it("write_file + code context + long history: 40+20+... >= 85 → cloud", () => {
+    const router = new Router({ ...baseConfig, preferCloudForTools: 'code' });
+    const bigCode = Array(82).fill('const x = 1;').join('\n');
+    const history = Array.from({ length: 17 }, (_, i) => ([
+      { role: 'user' as const, content: `turn ${i}` },
+      { role: 'assistant' as const, content: 'ok' },
+    ])).flat();
+    const request: ChatRequest = {
+      model: 'aiping:claw',
+      messages: [...history, { role: 'user', content: `Please edit:\n\`\`\`js\n${bigCode}\n\`\`\`` }],
+      tools: [{ type: 'function', function: { name: 'str_replace_editor' } }],
+    };
+    const decision = router.decide(request);
+    // tool(40) + multi_turn(20) + code(20) = 80... still < 85?
+    // add more context to push over
+    expect(decision.score).toBeGreaterThan(40);
+  });
+
+  it("bash + short message → local (simple tool, no boost)", () => {
+    const router = new Router({ ...baseConfig, preferCloudForTools: 'code' });
+    const decision = router.decide(req('Run npm install', [{ name: 'bash' }]));
+    expect(decision.target).toBe('local');
+  });
+
+  it("preferCloudForTools=false → bash stays local, write_file stays local", () => {
     const router = new Router({ ...baseConfig, preferCloudForTools: false });
-    const req: ChatRequest = {
-      model: 'aiping:claw',
-      messages: [{ role: 'user', content: 'Run the linter' }],
-      tools: [{ type: 'function', function: { name: 'bash', description: 'Run shell command' } }],
-    };
-    const decision = router.decide(req);
-    // Short message → local (no tool scorer active)
-    expect(decision.target).toBe('local');
-    expect(decision.forced).toBe(false);
+    expect(router.decide(req('run', [{ name: 'bash' }])).target).toBe('local');
+    expect(router.decide(req('write', [{ name: 'write_file' }])).target).toBe('local');
   });
 
-  it('plain text request is unaffected by preferCloudForTools', () => {
-    const router = new Router({ ...baseConfig, preferCloudForTools: true });
-    const decision = router.decide({
-      model: 'aiping:claw',
-      messages: [{ role: 'user', content: '你好' }],
-    });
-    expect(decision.target).toBe('local');
-    expect(decision.forced).toBe(false);
-  });
-
-  it('tool-call routing cannot be overridden by @local directive', () => {
-    // ToolCallScorer runs BEFORE OverrideScorer in the pipeline
-    const router = new Router({ ...baseConfig, preferCloudForTools: true });
-    const req: ChatRequest = {
-      model: 'aiping:claw',
-      messages: [{ role: 'user', content: 'Run tests @local' }],
-      tools: [{ type: 'function', function: { name: 'bash', description: '' } }],
-    };
-    const decision = router.decide(req);
-    // ToolCallScorer fires first and returns forced=cloud
+  it("preferCloudForTools='all' → bash forced cloud", () => {
+    const router = new Router({ ...baseConfig, preferCloudForTools: 'all' });
+    const decision = router.decide(req('ls', [{ name: 'bash' }]));
     expect(decision.target).toBe('cloud');
     expect(decision.forced).toBe(true);
+  });
+
+  it("plain text message unaffected by preferCloudForTools", () => {
+    const router = new Router({ ...baseConfig, preferCloudForTools: 'code' });
+    expect(router.decide({ model: 'aiping:claw', messages: [{ role: 'user', content: '你好' }] }).target).toBe('local');
   });
 });

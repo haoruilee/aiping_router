@@ -11,14 +11,18 @@ export interface PluginConfig {
   localTimeoutMs: number;
   debugRouting: boolean;
   /**
-   * When true (default), any request that contains tool definitions or tool
-   * call messages is automatically forced to cloud — regardless of the routing
-   * threshold. Small local models reliably fail to produce well-formed JSON
-   * function calls, so this switch prevents silent failures.
+   * Controls how tool-use requests are routed:
    *
-   * Turn off only if your local model explicitly supports tool use.
+   *  'code'  (default) — Only code-writing tools get a score boost (+40 pts),
+   *          nudging them toward cloud when combined with code context.
+   *          Simple tools (bash, read_file, search…) get no boost and stay local.
+   *
+   *  'all'   — Any request with a tools array is forced to cloud regardless
+   *          of content. Use this only if your local model cannot tool-call at all.
+   *
+   *  false   — No tool-based routing. Pure score+threshold decides everything.
    */
-  preferCloudForTools: boolean;
+  preferCloudForTools: 'code' | 'all' | false;
 }
 
 export const DEFAULT_CONFIG: Omit<PluginConfig, 'aipingApiKey'> = {
@@ -32,8 +36,8 @@ export const DEFAULT_CONFIG: Omit<PluginConfig, 'aipingApiKey'> = {
   fallbackToCloud: true,
   localTimeoutMs: 30000,
   debugRouting: false,
-  // Default ON: tool-use requests always go to cloud.
-  preferCloudForTools: true,
+  // Default 'code': adds score boost for code-writing tools, leaves simple tools local.
+  preferCloudForTools: 'code' as const,
 };
 
 // ── OpenAI-compatible message structure (with tool call extensions) ─────────

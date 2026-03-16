@@ -67,10 +67,11 @@
         "default": false
       },
       "preferCloudForTools": {
-        "type": "boolean",
-        "title": "Prefer Cloud for Tool Calls",
-        "description": "当请求包含工具调用（tools 字段或 tool 消息）时自动路由到云端。推荐开启——小本地模型通常无法可靠生成 JSON function call。",
-        "default": true
+        "type": "string",
+        "title": "Tool-Use Routing Mode",
+        "description": "决定工具调用如何路由：'code'（默认）= 仅代码写入类工具加分走云端，bash/read等简单工具走本地；'all' = 所有工具调用强制云端；false = 关闭工具路由。",
+        "enum": ["code", "all", "false"],
+        "default": "code"
       }
     }
   }
