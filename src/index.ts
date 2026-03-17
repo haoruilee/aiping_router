@@ -19,6 +19,7 @@ import { Router } from './router/router.js';
 import { LocalAdapter } from './providers/local.js';
 import { CloudAdapter } from './providers/cloud.js';
 import { runSetupWizard } from './setup/wizard.js';
+import { DASHBOARD_HTML } from './dashboard/html.js';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -207,6 +208,95 @@ export default function register(api: OpenClawPluginAPI): void {
     },
   });
 
+  // ── Dashboard UI ─────────────────────────────────────────────────────────────
+  api.registerHttpRoute({
+    path: '/aiping/dashboard',
+    auth: 'plugin',
+    match: 'exact',
+    handler: async (_req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(DASHBOARD_HTML);
+      return true;
+    },
+  });
+
+  // ── Config API (GET/POST) ─────────────────────────────────────────────────────
+  api.registerHttpRoute({
+    path: '/aiping/api/config',
+    auth: 'plugin',
+    match: 'exact',
+    handler: async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
+      if (req.method === 'GET') {
+        const raw = readPluginConfigFromFile(api.id) ?? api.pluginConfig ?? {};
+        const cfg = buildConfig(raw as Record<string, unknown>);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(cfg));
+        return true;
+      }
+      if (req.method === 'POST') {
+        try {
+          const body = await readBody(req);
+          const data = JSON.parse(body) as Record<string, unknown>;
+          const config = buildConfig(data);
+          const saved = writePluginConfigToFile(api.id, config);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: saved, config }));
+          return true;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: msg }));
+          return true;
+        }
+      }
+      res.writeHead(405, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Method not allowed' }));
+      return true;
+    },
+  });
+
+  // ── Demo chat (trial) ────────────────────────────────────────────────────────
+  api.registerHttpRoute({
+    path: '/aiping/demo/chat',
+    auth: 'plugin',
+    match: 'exact',
+    handler: async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
+      if (req.method !== 'POST') {
+        res.writeHead(405, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Method not allowed' }));
+        return true;
+      }
+      try {
+        const body = await readBody(req);
+        const { message } = JSON.parse(body) as { message?: string };
+        if (!message || typeof message !== 'string') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Missing message' }));
+          return true;
+        }
+        const liveCfg = buildConfig(readPluginConfigFromFile(api.id) ?? api.pluginConfig ?? {});
+        const chatReq = {
+          model: 'aiping:claw',
+          messages: [{ role: 'user' as const, content: message }],
+          stream: false,
+        };
+        const router = new Router(liveCfg);
+        const decision = router.decide(chatReq);
+        const response = await fetchChat(decision.target, liveCfg, chatReq) as Record<string, unknown>;
+        response._target = decision.target === 'cloud' ? '云端' : '本地';
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(response));
+        return true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        api.logger.warn(`[model_router] demo error: ${message}`);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: message }));
+        return true;
+      }
+    },
+  });
+
   // ── Startup log ──────────────────────────────────────────────────────────────
   if (!cfg.aipingApiKey) {
     api.logger.warn(
@@ -219,6 +309,9 @@ export default function register(api: OpenClawPluginAPI): void {
       ` | 阈值=${cfg.routingThreshold} | 代理=/aiping/v1/chat/completions`
     );
   }
+  api.logger.info(
+    '[model_router] 控制台: http://localhost:18789/aiping/dashboard （试用 + 配置）'
+  );
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

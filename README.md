@@ -113,6 +113,8 @@ openclaw plugins install @aiping.cn/model_router
 ➜  运行配置向导：openclaw model-router-setup
 ```
 
+**Web 控制台**：启动 gateway 后访问 `http://localhost:18789/aiping/dashboard`，可试用路由效果并手动填写模型配置。
+
 ---
 
 ## 三、运行配置向导
