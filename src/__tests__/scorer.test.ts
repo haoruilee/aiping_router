@@ -49,6 +49,20 @@ describe('TokenCountScorer', () => {
     expect(result.score).toBeGreaterThan(0);
     expect(result.score).toBeLessThan(scorer.maxScore);
   });
+
+  it('ignores system messages (OpenClaw wrapper) — short user + long system = low score', () => {
+    // Simulates OpenClaw adding long system prompt/tool schemas; only user content should count
+    const longSystemPrompt = 'You are a helpful assistant. ' + 'instruction '.repeat(5000);
+    const req: ChatRequest = {
+      model: 'aiping:claw',
+      messages: [
+        { role: 'system', content: longSystemPrompt },
+        { role: 'user', content: 'Hi' },
+      ],
+    };
+    const result = scorer.score(req);
+    expect(result.score).toBe(0);
+  });
 });
 
 // ── CodeComplexityScorer ──────────────────────────────────────────────────────
@@ -133,6 +147,18 @@ describe('MultiTurnContextScorer', () => {
     const result = scorer.score(makeRequest('content', 17));
     expect(result.score).toBe(scorer.maxScore);
   });
+
+  it('ignores system messages in turn count — system + 1 user = 1 turn', () => {
+    const req: ChatRequest = {
+      model: 'aiping:claw',
+      messages: [
+        { role: 'system', content: 'Long system prompt...' },
+        { role: 'user', content: 'Hi' },
+      ],
+    };
+    const result = scorer.score(req);
+    expect(result.score).toBe(0);
+  });
 });
 
 // ── OverrideScorer ────────────────────────────────────────────────────────────
@@ -194,5 +220,18 @@ describe('Scorer integration', () => {
     const content = `请逐步分析这段代码并对比优缺点：\n\`\`\`js\n${bigCode}\n\`\`\`\n` + 'x'.repeat(6000);
     const result = scorer.score(makeRequest(content, 17));
     expect(result.totalScore).toBeGreaterThanOrEqual(85);
+  });
+
+  it('OpenClaw wrapper: long system + short user does not inflate score', () => {
+    const longWrapper = 'System instructions... ' + 'x'.repeat(20000); // ~5000 tokens
+    const req: ChatRequest = {
+      model: 'aiping:claw',
+      messages: [
+        { role: 'system', content: longWrapper },
+        { role: 'user', content: '1+1等于几？' },
+      ],
+    };
+    const result = scorer.score(req);
+    expect(result.totalScore).toBeLessThan(85);
   });
 });

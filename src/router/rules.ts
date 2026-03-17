@@ -22,10 +22,21 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+/**
+ * Extracts text from messages for scoring. Excludes system messages to avoid
+ * OpenClaw/agent wrapper (long system prompts, tool schemas) inflating scores.
+ * Only user, assistant, and tool messages reflect actual conversation content.
+ */
 function extractAllText(request: ChatRequest): string {
   return request.messages
+    .filter((m) => m.role !== 'system')
     .map((m) => toMessageText(m.content as LegacyContent | StructuredContent))
     .join('\n');
+}
+
+/** Message count excluding system (used for multi-turn scoring). */
+function conversationTurnCount(request: ChatRequest): number {
+  return request.messages.filter((m) => m.role !== 'system').length;
 }
 
 /**
@@ -148,7 +159,7 @@ export class MultiTurnContextScorer implements RuleScorer {
   private readonly TURN_THRESHOLD = 16;
 
   score(request: ChatRequest): DimensionScore {
-    const turns = request.messages.length;
+    const turns = conversationTurnCount(request);
     let points = 0;
     let reason = `${turns} message(s) in context`;
 
