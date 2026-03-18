@@ -21,7 +21,7 @@ function makeRequest(content: string, turns = 1): ChatRequest {
 }
 
 // ── TokenCountScorer ──────────────────────────────────────────────────────────
-// HIGH_THRESHOLD = 4000, LOW_THRESHOLD = 1500
+// HIGH_THRESHOLD = 6000, LOW_THRESHOLD = 2500
 
 describe('TokenCountScorer', () => {
   const scorer = new TokenCountScorer();
@@ -31,20 +31,20 @@ describe('TokenCountScorer', () => {
     expect(result.score).toBe(0);
   });
 
-  it('returns 0 for medium messages under 1500 tokens', () => {
+  it('returns 0 for medium messages under 2500 tokens', () => {
     const content = 'word '.repeat(500); // ~500 tokens
     const result = scorer.score(makeRequest(content));
     expect(result.score).toBe(0);
   });
 
-  it('returns max score for very long messages (>4000 tokens)', () => {
-    const longContent = 'word '.repeat(4500); // ~4500 tokens
+  it('returns max score for very long messages (≥6000 tokens)', () => {
+    const longContent = 'word '.repeat(6500); // ~6500 tokens
     const result = scorer.score(makeRequest(longContent));
     expect(result.score).toBe(scorer.maxScore);
   });
 
-  it('returns partial score for messages between 1500-4000 tokens', () => {
-    const medContent = 'word '.repeat(2500); // ~2500 tokens
+  it('returns partial score for messages between 2500-6000 tokens', () => {
+    const medContent = 'word '.repeat(3500); // ~3500 tokens
     const result = scorer.score(makeRequest(medContent));
     expect(result.score).toBeGreaterThan(0);
     expect(result.score).toBeLessThan(scorer.maxScore);
@@ -66,7 +66,7 @@ describe('TokenCountScorer', () => {
 });
 
 // ── CodeComplexityScorer ──────────────────────────────────────────────────────
-// LINE_THRESHOLD = 80
+// LINE_THRESHOLD = 100
 
 describe('CodeComplexityScorer', () => {
   const scorer = new CodeComplexityScorer();
@@ -76,17 +76,16 @@ describe('CodeComplexityScorer', () => {
     expect(result.score).toBe(0);
   });
 
-  it('returns 0 for small code blocks (< 80 lines)', () => {
+  it('returns partial score for small code blocks (< 100 lines)', () => {
     const codeLines = Array(20).fill('  const x = 1;').join('\n');
     const content = `Here is code:\n\`\`\`typescript\n${codeLines}\n\`\`\``;
     const result = scorer.score(makeRequest(content));
-    // Partial score since lines < threshold
     expect(result.score).toBeGreaterThanOrEqual(0);
     expect(result.score).toBeLessThan(scorer.maxScore);
   });
 
-  it('returns max score for large code blocks (>= 80 lines)', () => {
-    const codeLines = Array(85).fill('  const x = 1;').join('\n');
+  it('returns max score for large code blocks (≥ 100 lines)', () => {
+    const codeLines = Array(105).fill('  const x = 1;').join('\n');
     const content = `Here is code:\n\`\`\`typescript\n${codeLines}\n\`\`\``;
     const result = scorer.score(makeRequest(content));
     expect(result.score).toBe(scorer.maxScore);
@@ -110,24 +109,24 @@ describe('ReasoningDepthScorer', () => {
     expect(result.score).toBe(0);
   });
 
-  it('detects strong English multi-word phrases', () => {
+  it('detects strong English multi-word phrases (1 match = half score)', () => {
     const result = scorer.score(makeRequest('Please explain in detail how this works.'));
+    expect(result.score).toBe(Math.round(scorer.maxScore / 2));
+  });
+
+  it('gives full score for ≥2 strong phrases', () => {
+    const result = scorer.score(makeRequest('Please explain in detail and walk me through step by step.'));
     expect(result.score).toBe(scorer.maxScore);
   });
 
-  it('detects strong Chinese multi-word phrases', () => {
+  it('detects strong Chinese multi-word phrases (1 match = half score)', () => {
     const result = scorer.score(makeRequest('请对这两个方案进行深度分析'));
-    expect(result.score).toBe(scorer.maxScore);
-  });
-
-  it('detects step-by-step keyword', () => {
-    const result = scorer.score(makeRequest('Walk me through this step by step.'));
-    expect(result.score).toBe(scorer.maxScore);
+    expect(result.score).toBe(Math.round(scorer.maxScore / 2));
   });
 });
 
 // ── MultiTurnContextScorer ────────────────────────────────────────────────────
-// TURN_THRESHOLD = 16
+// TURN_THRESHOLD = 20
 
 describe('MultiTurnContextScorer', () => {
   const scorer = new MultiTurnContextScorer();
@@ -143,8 +142,8 @@ describe('MultiTurnContextScorer', () => {
     expect(result.score).toBeLessThan(scorer.maxScore);
   });
 
-  it('returns max score for very long conversations (>= 16 turns)', () => {
-    const result = scorer.score(makeRequest('content', 17));
+  it('returns max score for very long conversations (≥ 20 turns)', () => {
+    const result = scorer.score(makeRequest('content', 21));
     expect(result.score).toBe(scorer.maxScore);
   });
 
@@ -197,7 +196,7 @@ describe('Scorer integration', () => {
 
   it('typical short message scores well below 85 threshold', () => {
     const result = scorer.score(makeRequest('请帮我写一个 hello world'));
-    expect(result.totalScore).toBeLessThan(20);
+    expect(result.totalScore).toBeLessThan(30);
     expect(result.forced).toBeUndefined();
   });
 
@@ -216,10 +215,17 @@ describe('Scorer integration', () => {
   });
 
   it('genuinely heavy request (huge + code + reasoning + long chat) scores >= 85', () => {
-    const bigCode = Array(90).fill('const x = require("something");').join('\n');
-    const content = `请逐步分析这段代码并对比优缺点：\n\`\`\`js\n${bigCode}\n\`\`\`\n` + 'x'.repeat(6000);
-    const result = scorer.score(makeRequest(content, 17));
+    const bigCode = Array(105).fill('const x = require("something");').join('\n');
+    const content = `请逐步分析这段代码并深度分析优缺点：\n\`\`\`js\n${bigCode}\n\`\`\`\n` + 'x'.repeat(28000); // ~7000 tokens
+    const result = scorer.score(makeRequest(content, 21));
     expect(result.totalScore).toBeGreaterThanOrEqual(85);
+  });
+
+  it('total score is capped at 100', () => {
+    const bigCode = Array(105).fill('const x = require("something");').join('\n');
+    const content = `请逐步分析并深度分析：\n\`\`\`js\n${bigCode}\n\`\`\`\n` + 'x'.repeat(28000);
+    const result = scorer.score(makeRequest(content, 21));
+    expect(result.totalScore).toBeLessThanOrEqual(100);
   });
 
   it('OpenClaw wrapper: long system + short user does not inflate score', () => {

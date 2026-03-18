@@ -29,21 +29,21 @@ describe("ToolCallScorer mode='code'", () => {
     expect(result.forced).toBeUndefined();
   });
 
-  it('write_file → +40 score (code tool)', () => {
+  it('write_file → +20 score (code tool)', () => {
     const result = scorer.score(req('Write a function', [{ name: 'write_file' }]));
-    expect(result.score).toBe(40);
+    expect(result.score).toBe(20);
     expect((result as any).forced).toBeUndefined();
     expect(result.reason).toContain('write_file');
   });
 
-  it('str_replace_editor → +40 score (code tool)', () => {
+  it('str_replace_editor → +20 score (code tool)', () => {
     const result = scorer.score(req('Fix the bug', [{ name: 'str_replace_editor' }]));
-    expect(result.score).toBe(40);
+    expect(result.score).toBe(20);
   });
 
-  it('create_file → +40 score (code tool)', () => {
+  it('create_file → +20 score (code tool)', () => {
     const result = scorer.score(req('Create component', [{ name: 'create_file' }]));
-    expect(result.score).toBe(40);
+    expect(result.score).toBe(20);
   });
 
   it('bash → score 0 (simple tool, no boost)', () => {
@@ -63,11 +63,11 @@ describe("ToolCallScorer mode='code'", () => {
     expect(result.score).toBe(0);
   });
 
-  it('mixed tools: write_file + bash → +40 (code tool wins)', () => {
+  it('mixed tools: write_file + bash → +20 (code tool wins)', () => {
     const result = scorer.score(req('Write and run', [
       { name: 'write_file' }, { name: 'bash' },
     ]));
-    expect(result.score).toBe(40);
+    expect(result.score).toBe(20);
   });
 
   it('tool result in message history → handled by role detection', () => {
@@ -80,9 +80,9 @@ describe("ToolCallScorer mode='code'", () => {
       ],
       tools: [{ type: 'function', function: { name: 'write_file' } }],
     };
-    // write_file is a code tool → +40
+    // write_file is a code tool → +20
     const result = scorer.score(request);
-    expect(result.score).toBe(40);
+    expect(result.score).toBe(20);
   });
 });
 
@@ -110,30 +110,31 @@ describe("ToolCallScorer mode='all'", () => {
 // ── Router integration ────────────────────────────────────────────────────────
 
 describe("Router.decide() — preferCloudForTools='code'", () => {
-  it("write_file + short message: 40+0 < 85 → STILL local (threshold not reached alone)", () => {
+  it("write_file + short message: 20+0 < 85 → STILL local (threshold not reached alone)", () => {
     const router = new Router({ ...baseConfig, preferCloudForTools: 'code' });
     const decision = router.decide(req('Add a comment', [{ name: 'write_file' }]));
-    // +40 from tool scorer, but no other dimensions fire → total 40 < 85 → local
+    // +20 from tool scorer, but no other dimensions fire → total 20 < 85 → local
     expect(decision.target).toBe('local');
     expect(decision.forced).toBe(false);
   });
 
-  it("write_file + code context + long history: 40+20+... >= 85 → cloud", () => {
+  it("write_file + code context + long history: 20+24+... >= 85 → cloud", () => {
     const router = new Router({ ...baseConfig, preferCloudForTools: 'code' });
-    const bigCode = Array(82).fill('const x = 1;').join('\n');
-    const history = Array.from({ length: 17 }, (_, i) => ([
+    const bigCode = Array(105).fill('const x = 1;').join('\n');
+    const history = Array.from({ length: 21 }, (_, i) => ([
       { role: 'user' as const, content: `turn ${i}` },
       { role: 'assistant' as const, content: 'ok' },
     ])).flat();
+    const longContext = 'x'.repeat(25000); // ~6250 tokens
     const request: ChatRequest = {
       model: 'aiping:claw',
-      messages: [...history, { role: 'user', content: `Please edit:\n\`\`\`js\n${bigCode}\n\`\`\`` }],
+      messages: [...history, { role: 'user', content: `Please edit:\n\`\`\`js\n${bigCode}\n\`\`\`\n${longContext}` }],
       tools: [{ type: 'function', function: { name: 'str_replace_editor' } }],
     };
     const decision = router.decide(request);
-    // tool(40) + multi_turn(20) + code(20) = 80... still < 85?
-    // add more context to push over
-    expect(decision.score).toBeGreaterThan(40);
+    // tool(20) + multi_turn(24) + code(24) + token(35) >= 85 → cloud
+    expect(decision.target).toBe('cloud');
+    expect(decision.score).toBeGreaterThanOrEqual(85);
   });
 
   it("bash + short message → local (simple tool, no boost)", () => {

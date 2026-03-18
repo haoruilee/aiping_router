@@ -39,6 +39,9 @@ export class Scorer {
       }
     }
 
+    // Cap total at 100 (fixed max score)
+    totalScore = Math.min(100, totalScore);
+
     return { totalScore, dimensionScores, forced };
   }
 }
