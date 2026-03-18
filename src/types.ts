@@ -31,7 +31,7 @@ export const DEFAULT_CONFIG: Omit<PluginConfig, 'aipingApiKey'> = {
   // No hardcoded local model — auto-detected from Ollama at setup time.
   localModel: '',
   cloudModel: 'Kimi-K2.5',
-  // High threshold keeps ~90% of requests on the local model.
+  // High threshold keeps ~90% of requests on the local model. Max score = 100.
   routingThreshold: 85,
   fallbackToCloud: true,
   localTimeoutMs: 30000,

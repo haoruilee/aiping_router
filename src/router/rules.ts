@@ -42,15 +42,15 @@ function conversationTurnCount(request: ChatRequest): number {
 /**
  * Token Count Scorer
  * Long inputs are harder for small local models (limited context window).
- * > 4000 estimated tokens → full 30 points (relaxed to keep ~90% local)
- * Scales linearly from 0 at 1500 tokens to 30 at 4000 tokens.
+ * ≥ 6000 estimated tokens → full 35 points (stricter thresholds keep scores lower).
+ * Scales linearly from 0 at 2500 tokens to 35 at 6000 tokens.
  */
 export class TokenCountScorer implements RuleScorer {
   readonly name = 'token_count';
-  readonly maxScore = 30;
+  readonly maxScore = 35;
 
-  private readonly LOW_THRESHOLD = 1500;
-  private readonly HIGH_THRESHOLD = 4000;
+  private readonly LOW_THRESHOLD = 2500;
+  private readonly HIGH_THRESHOLD = 6000;
 
   score(request: ChatRequest): DimensionScore {
     const text = extractAllText(request);
@@ -77,13 +77,13 @@ export class TokenCountScorer implements RuleScorer {
 /**
  * Code Complexity Scorer
  * Large code blocks require strong reasoning capabilities.
- * Code fences with > 80 lines → full 20 points (relaxed to keep ~90% local).
+ * Code fences with ≥ 100 lines → full 24 points (stricter to keep scores lower).
  */
 export class CodeComplexityScorer implements RuleScorer {
   readonly name = 'code_complexity';
-  readonly maxScore = 20;
+  readonly maxScore = 24;
 
-  private readonly LINE_THRESHOLD = 80;
+  private readonly LINE_THRESHOLD = 100;
 
   score(request: ChatRequest): DimensionScore {
     const text = extractAllText(request);
@@ -113,11 +113,11 @@ export class CodeComplexityScorer implements RuleScorer {
 /**
  * Reasoning Depth Scorer
  * Only triggers for clearly heavy analytical tasks (≥2 strong keywords).
- * Single keyword matches no longer score to reduce cloud routing rate.
+ * Requires ≥2 matches to score (stricter to keep scores lower).
  */
 export class ReasoningDepthScorer implements RuleScorer {
   readonly name = 'reasoning_depth';
-  readonly maxScore = 15;
+  readonly maxScore = 17;
 
   // Only "strong" multi-word or unambiguously complex phrases trigger scoring
   private readonly STRONG_KEYWORDS = [
@@ -136,11 +136,11 @@ export class ReasoningDepthScorer implements RuleScorer {
       text.includes(kw.toLowerCase())
     );
 
-    // Require ≥1 strong multi-word phrase to score
-    const points = matched.length >= 1 ? this.maxScore : 0;
+    // Require ≥2 strong phrases for full score; 1 match = half score (stricter)
+    const points = matched.length >= 2 ? this.maxScore : (matched.length >= 1 ? Math.round(this.maxScore / 2) : 0);
     const reason =
       matched.length >= 1
-        ? `强推理关键词: ${matched.slice(0, 3).join(', ')}`
+        ? `强推理关键词: ${matched.slice(0, 3).join(', ')} (${matched.length}个)`
         : '无强推理关键词';
 
     return { name: this.name, score: points, maxScore: this.maxScore, reason };
@@ -150,13 +150,13 @@ export class ReasoningDepthScorer implements RuleScorer {
 /**
  * Multi-turn Context Scorer
  * Long conversation histories require the model to synthesize and track many facts.
- * > 16 messages → full 20 points (relaxed to keep ~90% local).
+ * ≥ 20 messages → full 24 points (stricter to keep scores lower).
  */
 export class MultiTurnContextScorer implements RuleScorer {
   readonly name = 'multi_turn_context';
-  readonly maxScore = 20;
+  readonly maxScore = 24;
 
-  private readonly TURN_THRESHOLD = 16;
+  private readonly TURN_THRESHOLD = 20;
 
   score(request: ChatRequest): DimensionScore {
     const turns = conversationTurnCount(request);
@@ -226,8 +226,8 @@ export class OverrideScorer implements RuleScorer {
  *
  * Mode 'code' (default):
  *   Detects code-writing tools (write_file, str_replace, create_file, apply_patch…)
- *   and adds +40 score. Combined with typical code context this pushes complex
- *   coding tasks over the 85-pt threshold. Simple tools (bash, read_file, search,
+ *   and adds +20 score. Combined with typical code context this pushes complex
+ *   coding tasks over the 100-pt threshold. Simple tools (bash, read_file, search,
  *   ls…) get no boost and stay on the local model.
  *
  * Mode 'all':
@@ -259,7 +259,7 @@ export function isCodeTool(toolName: string): boolean {
 
 export class ToolCallScorer implements RuleScorer {
   readonly name = 'tool_call_detection';
-  readonly maxScore = 40;
+  readonly maxScore = 20;
 
   private readonly mode: 'code' | 'all';
 
@@ -303,9 +303,9 @@ export class ToolCallScorer implements RuleScorer {
       const names = codeTools.map(t => t.function?.name ?? '?').slice(0, 3).join(',');
       return {
         name:    this.name,
-        score:   this.maxScore,  // +40 pts — nudges code tasks toward cloud
+        score:   this.maxScore,  // +20 pts — nudges code tasks toward cloud
         maxScore: this.maxScore,
-        reason:  `代码写入工具 [${names}] +40分（与代码上下文叠加趋向云端）`,
+        reason:  `代码写入工具 [${names}] +20分（与代码上下文叠加趋向云端）`,
       };
     }
 

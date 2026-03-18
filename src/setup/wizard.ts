@@ -475,7 +475,7 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
     // ── 第三步：路由策略 ────────────────────────────────────────────────────
     step('第 3 步 / 4  ·  路由策略配置');
 
-    info('插件对每条消息打分（满分 85 分），超过阈值才路由到云端：');
+    info('插件对每条消息打分（满分 100 分），超过阈值才路由到云端：');
     blank();
     info(`  ${c.cyan('Token 数量 > 4000')}    → +30 分  （超长上下文）`);
     info(`  ${c.cyan('代码块 > 80 行')}        → +20 分  （大型代码分析）`);

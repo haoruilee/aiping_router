@@ -43,7 +43,7 @@
       "routingThreshold": {
         "type": "number",
         "title": "Routing Threshold",
-        "description": "复杂度评分阈值 (0-100)。评分 >= 阈值 → 云端，< 阈值 → 本地。默认 85 使约 90% 请求走本地。",
+        "description": "复杂度评分阈值 (0-100)。评分 >= 阈值 → 云端，< 阈值 → 本地。满分 100，默认 85 使约 90% 请求走本地。",
         "default": 85,
         "minimum": 0,
         "maximum": 100

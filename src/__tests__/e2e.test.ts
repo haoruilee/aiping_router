@@ -137,11 +137,11 @@ describe('E2E · 2. Routing Config Checks', () => {
   });
 
   it('genuinely heavy request (large code + long context + deep reasoning) scores >= 85', () => {
-    const bigCode = Array(85).fill('const x = require("dep");').join('\n');
-    // Pad to safely exceed 4000 tokens (~16000 chars) to guarantee full token score
-    const content = `请逐步分析这段代码并深度分析优缺点：\`\`\`js\n${bigCode}\n\`\`\`\n` + 'context '.repeat(2500);
+    const bigCode = Array(105).fill('const x = require("dep");').join('\n');
+    // Pad to exceed 6000 tokens (~24000 chars) for full token score; 2 reasoning phrases for full reasoning score
+    const content = `请逐步分析这段代码并深度分析优缺点：\`\`\`js\n${bigCode}\n\`\`\`\n` + 'context '.repeat(3000);
     const history: ChatMessage[] = [];
-    for (let i = 0; i < 17; i++) {
+    for (let i = 0; i < 21; i++) {
       history.push({ role: 'user', content: `turn ${i}` });
       history.push({ role: 'assistant', content: 'ok' });
     }
@@ -160,7 +160,7 @@ describe('E2E · 2. Routing Config Checks', () => {
   it('threshold=100 routes everything to local', () => {
     const localConfig = { ...config, routingThreshold: 100 };
     const r = new Router(localConfig);
-    const bigCode = Array(90).fill('x').join('\n');
+    const bigCode = Array(105).fill('x').join('\n');
     expect(r.decide(req(`\`\`\`\n${bigCode}\n\`\`\``, [])).target).toBe('local');
   });
 });
