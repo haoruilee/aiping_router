@@ -7,6 +7,12 @@
 [![E2E](https://github.com/haoruilee/aiping_router/actions/workflows/e2e.yml/badge.svg)](https://github.com/haoruilee/aiping_router/actions/workflows/e2e.yml)
 
 ---
+# 如何使用
+
+```
+Read https://raw.githubusercontent.com/haoruilee/aiping_router/main/README.md, run 'openclaw plugins install @aiping.cn/model_router' then follow the instructions in that file.`
+```
+
 
 ## 工作原理
 
