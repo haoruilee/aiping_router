@@ -6,6 +6,19 @@
 [![npm version](https://img.shields.io/npm/v/@aiping.cn/model_router)](https://www.npmjs.com/package/@aiping.cn/model_router)
 [![E2E](https://github.com/haoruilee/aiping_router/actions/workflows/e2e.yml/badge.svg)](https://github.com/haoruilee/aiping_router/actions/workflows/e2e.yml)
 
+### 给 AI / Coding Agent 的一行说明
+
+把下面任意一行贴进 Agent 规则、任务描述或对话开头，便于模型先读文档、再装依赖、再按步骤执行（类似「Read https://example/skill.md and follow the instructions」的用法）。
+
+| 场景 | 一行配置（可复制） |
+|------|-------------------|
+| 已在本仓库工作区内 | `Read README.md in the repository root, run npm install there, then follow the instructions in README.md.` |
+| 从 GitHub 远程拉任务 | `Read https://raw.githubusercontent.com/haoruilee/aiping_router/main/README.md, run npm install in the cloned repo root, then follow the instructions in that file.` |
+
+中文等价（任选其一）：`阅读仓库根目录 README.md，在根目录执行 npm install，然后严格按 README 说明操作。` / `阅读 https://raw.githubusercontent.com/haoruilee/aiping_router/main/README.md，克隆后在根目录执行 npm install，再按该文档操作。`
+
+> **说明：** `npm install` 面向**本仓库开发与测试**；若你的任务是**安装 OpenClaw 插件**而非改源码，请以 README 中「安装插件」为准（`openclaw plugins install @aiping.cn/model_router`），无需对本仓库执行 `npm install`。
+
 ---
 
 ## 工作原理
