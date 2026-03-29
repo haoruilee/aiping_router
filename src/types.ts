@@ -24,12 +24,10 @@ export interface PluginConfig {
    */
   preferCloudForTools: 'code' | 'all' | false;
   /**
-   * When true, add a small optional score bump for PinchBench-shaped prompts (image,
-   * MEMORY.md workflows, email corpus synthesis, etc.) so they cross the threshold
-   * more often if you use a lower threshold — never forces cloud. Default false so
-   * out-of-the-box routing stays maximally local (threshold + token/code/reasoning/multi-turn only).
+   * When true, add a small optional score bump for certain multi-step or multi-file
+   * request shapes (never forces cloud). Default false so routing stays maximally local.
    */
-  pinchbenchHeuristics: boolean;
+  workflowHintBoost: boolean;
 }
 
 export const DEFAULT_CONFIG: Omit<PluginConfig, 'aipingApiKey'> = {
@@ -45,7 +43,7 @@ export const DEFAULT_CONFIG: Omit<PluginConfig, 'aipingApiKey'> = {
   debugRouting: false,
   // Default 'code': adds score boost for code-writing tools, leaves simple tools local.
   preferCloudForTools: 'code' as const,
-  pinchbenchHeuristics: false,
+  workflowHintBoost: false,
 };
 
 // ── OpenAI-compatible message structure (with tool call extensions) ─────────

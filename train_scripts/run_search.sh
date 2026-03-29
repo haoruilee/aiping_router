@@ -12,6 +12,7 @@
 #
 # Usage:
 #   export AIPING_KEY=QC-your-key
+#   export BENCH_SKILL_GIT_URL='https://github.com/example/agent-bench-skill.git'
 #   ./train_scripts/run_search.sh                      # full search
 #   ./train_scripts/run_search.sh --dry-run            # preview population
 #   ./train_scripts/run_search.sh --resume results/generation_003.json
@@ -19,7 +20,7 @@
 #
 # The script will:
 #   1. Validate prerequisites
-#   2. Clone/update PinchBench skill
+#   2. Clone/update the benchmark skill (BENCH_SKILL_GIT_URL)
 #   3. Start gateway (unless already running)
 #   4. Run genetic_search.py with all args forwarded
 #   5. Print the best configuration found
@@ -30,7 +31,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG="$SCRIPT_DIR/search_config.yaml"
 RESULTS_DIR="$SCRIPT_DIR/results"
-SKILL_DIR="/tmp/pinchbench-skill"
+SKILL_DIR="${SKILL_DIR:-/tmp/agent-bench-skill}"
+BENCH_SKILL_GIT_URL="${BENCH_SKILL_GIT_URL:-}"
 GATEWAY_PORT="${GATEWAY_PORT:-18789}"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -42,21 +44,24 @@ err()   { echo -e "${RED}❌${RESET} $*" >&2; exit 1; }
 
 # ── Validate ──────────────────────────────────────────────────────────────────
 [[ -z "${AIPING_KEY:-}" ]] && err "AIPING_KEY not set. Run: export AIPING_KEY=QC-..."
-for cmd in python3 uv ollama openclaw; do
+for cmd in python3 uv ollama openclaw git; do
   command -v "$cmd" &>/dev/null || err "Missing: $cmd"
 done
 python3 -c "import yaml" 2>/dev/null || { pip install pyyaml -q && ok "Installed pyyaml"; }
 python3 -c "import modelscope" 2>/dev/null || { pip install modelscope -q && ok "Installed modelscope"; }
 
-# ── Clone/update PinchBench ───────────────────────────────────────────────────
+# ── Clone/update benchmark skill ─────────────────────────────────────────────
+if [[ -z "$BENCH_SKILL_GIT_URL" ]]; then
+  err "BENCH_SKILL_GIT_URL not set. Export it to your skill repo git URL."
+fi
 if [[ ! -d "$SKILL_DIR/.git" ]]; then
-  info "Cloning PinchBench skill…"
-  git clone --depth 1 https://github.com/pinchbench/skill.git "$SKILL_DIR"
+  info "Cloning benchmark skill…"
+  git clone --depth 1 "$BENCH_SKILL_GIT_URL" "$SKILL_DIR"
 else
-  info "Updating PinchBench skill…"
+  info "Updating benchmark skill…"
   git -C "$SKILL_DIR" pull --ff-only 2>/dev/null || true
 fi
-ok "PinchBench ready at $SKILL_DIR"
+ok "Benchmark skill ready at $SKILL_DIR"
 
 # Update skill_dir in config if needed
 python3 - <<PYEOF
@@ -99,7 +104,7 @@ fi
 
 # ── Print search plan ─────────────────────────────────────────────────────────
 echo ""
-echo -e "${BOLD}  🧬 Genetic Parameter Search${RESET}"
+echo -e "${BOLD}  Genetic Parameter Search${RESET}"
 echo -e "  Config      : $CONFIG"
 echo -e "  Results dir : $RESULTS_DIR"
 python3 - <<PYEOF

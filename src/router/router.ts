@@ -17,7 +17,7 @@ export class Router {
       this.scorer = new Scorer(
         buildScorerChain({
           preferCloudForTools: config.preferCloudForTools,
-          pinchbenchHeuristics: config.pinchbenchHeuristics,
+          workflowHintBoost: config.workflowHintBoost,
         })
       );
     } else {

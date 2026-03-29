@@ -86,9 +86,9 @@ rule_weights:
   reasoning_depth:  { min: 0.0, max: 2.0, default: 1.0 }
   multi_turn:       { min: 0.0, max: 2.0, default: 1.0 }
 
-# ── PinchBench evaluation settings ───────────────────────────────────────────
+# ── External agent benchmark skill (clone URL via BENCH_SKILL_GIT_URL in run_search.sh)
 benchmark:
-  skill_dir: "/tmp/pinchbench-skill"
+  skill_dir: "/tmp/agent-bench-skill"
   suite: "automated-only"      # automated-only | all | task_00_sanity,...
   runs_per_task: 1             # increase to 2-3 for more reliable scores
   gateway_port: 18789
@@ -100,7 +100,7 @@ benchmark:
 # tps_score  = avg_tps / 100                 (normalised)
 # cloud_ratio = fraction of requests routed to cloud (0..1)
 fitness_weights:
-  accuracy:    0.60   # PinchBench task score (most important)
+  accuracy:    0.60   # Mean task score from benchmark JSON (most important)
   ttft:        0.20   # Time to first token (penalise slow local models)
   tps:         0.10   # Tokens per second throughput
   cost:        0.10   # Cloud usage fraction (penalise expensive routing)

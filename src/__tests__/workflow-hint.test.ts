@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Router } from '../router/router.js';
-import { CloudHeuristicScorer, isImageGenTool, ToolCallScorer } from '../router/rules.js';
+import { WorkflowHintScorer, isImageGenTool, ToolCallScorer } from '../router/rules.js';
 import type { ChatRequest, PluginConfig } from '../types.js';
 import { DEFAULT_CONFIG } from '../types.js';
 
@@ -9,10 +9,10 @@ const base: PluginConfig = {
   aipingApiKey: 'test',
 };
 
-describe('CloudHeuristicScorer', () => {
-  const h = new CloudHeuristicScorer();
+describe('WorkflowHintScorer', () => {
+  const h = new WorkflowHintScorer();
 
-  it('adds score on PinchBench image phrasing without forcing cloud', () => {
+  it('adds score on image-generation-style phrasing without forcing cloud', () => {
     const r = h.score({
       model: 'aiping:claw',
       messages: [
@@ -28,7 +28,7 @@ describe('CloudHeuristicScorer', () => {
     expect(r.score).toBeLessThanOrEqual(h.maxScore);
   });
 
-  it('adds score on second-brain MEMORY.md pattern', () => {
+  it('adds score on persistent memory file pattern', () => {
     const r = h.score({
       model: 'aiping:claw',
       messages: [
@@ -67,11 +67,11 @@ describe('CloudHeuristicScorer', () => {
 });
 
 describe('Router defaults favor local', () => {
-  it('PinchBench image prompt stays local at threshold 100 without optional heuristics', () => {
+  it('image-style prompt stays local at threshold 100 when workflow hints off', () => {
     const router = new Router({
       ...base,
       routingThreshold: 100,
-      pinchbenchHeuristics: false,
+      workflowHintBoost: false,
     });
     const decision = router.decide({
       model: 'aiping:claw',
@@ -85,11 +85,11 @@ describe('Router defaults favor local', () => {
     expect(decision.target).toBe('local');
   });
 
-  it('optional heuristics alone do not reach threshold 85', () => {
+  it('workflow hints alone do not reach threshold 85', () => {
     const router = new Router({
       ...base,
       routingThreshold: 85,
-      pinchbenchHeuristics: true,
+      workflowHintBoost: true,
     });
     const decision = router.decide({
       model: 'aiping:claw',
@@ -105,7 +105,7 @@ describe('Router defaults favor local', () => {
   });
 
   it('@local overrides remain first', () => {
-    const router = new Router({ ...base, pinchbenchHeuristics: true });
+    const router = new Router({ ...base, workflowHintBoost: true });
     const decision = router.decide({
       model: 'aiping:claw',
       messages: [
@@ -124,7 +124,7 @@ describe('Router defaults favor local', () => {
 describe('ToolCallScorer + image tools', () => {
   const scorer = new ToolCallScorer('code');
 
-  it('does not force cloud for generate_image tool (stays local unless code patterns score high)', () => {
+  it('does not force cloud for generate_image tool', () => {
     const req: ChatRequest = {
       model: 'aiping:claw',
       messages: [{ role: 'user', content: 'Make a diagram' }],

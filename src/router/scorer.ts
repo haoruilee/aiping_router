@@ -7,13 +7,13 @@ export class Scorer {
 
   /**
    * @param scorers  Full ordered list of scorers to apply.
-   *                 Default matches Router: override → PinchBench heuristics (if enabled)
+   *                 Default matches Router: override → workflow hints (if enabled)
    *                 → tool scorer (if enabled) → token/code/reasoning/multi-turn.
    */
   constructor(
     scorers: RuleScorer[] = buildScorerChain({
       preferCloudForTools: DEFAULT_CONFIG.preferCloudForTools,
-      pinchbenchHeuristics: DEFAULT_CONFIG.pinchbenchHeuristics,
+      workflowHintBoost: DEFAULT_CONFIG.workflowHintBoost,
     })
   ) {
     this.scorers = scorers;

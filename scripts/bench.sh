@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
-# bench.sh — AIPing Model Router PinchBench runner
+# bench.sh — AIPing Model Router agent benchmark runner
 #
-# Runs PinchBench against two routing configurations (hybrid vs cloud-only)
-# and prints a side-by-side comparison. Works locally and in CI.
+# Runs an external OpenClaw skill benchmark (hybrid vs cloud-only) and prints
+# a side-by-side comparison. The skill repo URL is not hardcoded: set
+# BENCH_SKILL_GIT_URL before running, or pass an existing clone with --skill-dir.
 #
 # Usage:
 #   ./scripts/bench.sh [options]
@@ -19,18 +20,20 @@
 #   --runs          <n>          Runs per task      (default: 1)
 #   --aiping-key    <key>        AIPing API key (overrides AIPING_KEY env var)
 #   --gateway-port  <port>       OpenClaw gateway port (default: 18789)
-#   --skill-dir     <path>       PinchBench skill dir (cloned if absent)
+#   --skill-dir     <path>       Benchmark skill checkout (cloned if absent)
 #   --output-dir    <path>       Results directory (default: /tmp/bench-results)
 #   --no-cloud      Run hybrid only, skip cloud-only baseline
-#   --upload        Upload results to PinchBench leaderboard
+#   --upload        Upload benchmark results (when the skill supports it)
 #   --help
 #
+# Environment:
+#   BENCH_SKILL_GIT_URL   git clone URL for the benchmark skill (required if skill-dir is empty)
+#
 # Examples:
-#   ./scripts/bench.sh                           # default preset
-#   ./scripts/bench.sh --preset fast             # quick 3-task smoke test
-#   ./scripts/bench.sh --local-model qwen2.5:7b --cloud-model DeepSeek-V3.2
-#   ./scripts/bench.sh --preset cloud-only --upload
-#   AIPING_KEY=QC-xxx ./scripts/bench.sh --preset llama-local
+#   export BENCH_SKILL_GIT_URL='https://github.com/example/agent-bench-skill.git'
+#   ./scripts/bench.sh
+#   ./scripts/bench.sh --preset fast
+#   AIPING_KEY=QC-xxx ./scripts/bench.sh --local-model qwen2.5:7b --cloud-model DeepSeek-V3.2
 # =============================================================================
 set -euo pipefail
 
@@ -47,7 +50,8 @@ SUITE="automated-only"
 RUNS="1"
 AIPING_KEY="${AIPING_KEY:-}"
 GATEWAY_PORT="18789"
-SKILL_DIR="/tmp/pinchbench-skill"
+SKILL_DIR="${SKILL_DIR:-/tmp/agent-bench-skill}"
+BENCH_SKILL_GIT_URL="${BENCH_SKILL_GIT_URL:-}"
 OUTPUT_BASE="/tmp/bench-results"
 NO_CLOUD=false
 UPLOAD_FLAG="--no-upload"
@@ -77,7 +81,7 @@ while [[ $# -gt 0 ]]; do
     --no-cloud)      NO_CLOUD=true;     shift ;;
     --upload)        UPLOAD_FLAG="";    shift ;;
     --help|-h)
-      sed -n '/^# Usage:/,/^# ====/p' "$0" | head -40
+      sed -n '/^# Usage:/,/^# ====/p' "$0" | head -45
       exit 0 ;;
     *) err "Unknown option: $1"; exit 1 ;;
   esac
@@ -127,7 +131,7 @@ if [[ -z "$AIPING_KEY" ]]; then
 fi
 
 hr
-echo -e "${BOLD}  🦀 AIPing Model Router — PinchBench${RESET}"
+echo -e "${BOLD}  AIPing Model Router — agent benchmark${RESET}"
 echo -e "  Local  : ${CYAN}$LOCAL_MODEL${RESET}"
 echo -e "  Cloud  : ${CYAN}$CLOUD_MODEL${RESET}"
 echo -e "  Threshold : ${CYAN}$THRESHOLD${RESET} (≥threshold → cloud)"
@@ -136,7 +140,7 @@ echo -e "  Output : $OUTPUT_DIR"
 hr
 
 # ── Check dependencies ────────────────────────────────────────────────────────
-for cmd in openclaw ollama uv python3; do
+for cmd in openclaw ollama uv python3 git; do
   if ! command -v "$cmd" &>/dev/null; then
     err "Required command not found: $cmd"
     case "$cmd" in
@@ -156,15 +160,20 @@ if ! ollama list 2>/dev/null | grep -q "^${LOCAL_MODEL%:*}"; then
 fi
 ok "Local model ready: $LOCAL_MODEL"
 
-# ── Clone/update PinchBench skill ─────────────────────────────────────────────
+# ── Clone/update benchmark skill ────────────────────────────────────────────
 if [[ ! -d "$SKILL_DIR/.git" ]]; then
-  info "Cloning pinchbench/skill → $SKILL_DIR"
-  git clone --depth 1 https://github.com/pinchbench/skill.git "$SKILL_DIR"
+  if [[ -z "$BENCH_SKILL_GIT_URL" ]]; then
+    err "No skill at $SKILL_DIR and BENCH_SKILL_GIT_URL is unset."
+    err "Set BENCH_SKILL_GIT_URL to a git URL, or clone a skill repo to --skill-dir."
+    exit 1
+  fi
+  info "Cloning benchmark skill → $SKILL_DIR"
+  git clone --depth 1 "$BENCH_SKILL_GIT_URL" "$SKILL_DIR"
 else
-  info "Updating pinchbench/skill"
+  info "Updating benchmark skill in $SKILL_DIR"
   git -C "$SKILL_DIR" pull --ff-only 2>/dev/null || true
 fi
-ok "PinchBench skill ready"
+ok "Benchmark skill ready"
 
 # ── Configure plugin ──────────────────────────────────────────────────────────
 info "Configuring @aiping.cn/model_router plugin"
@@ -190,7 +199,7 @@ cfg['cloudModel']        = '$CLOUD_MODEL'
 cfg['routingThreshold']  = $THRESHOLD
 cfg['debugRouting']      = False
 cfg['fallbackToCloud']   = True
-cfg['pinchbenchHeuristics'] = False
+cfg['workflowHintBoost'] = False
 
 # Disable hot-reload so agent operations don't restart gateway mid-benchmark
 d.setdefault('gateway', {}).setdefault('reload', {})['mode'] = 'off'
@@ -280,7 +289,7 @@ p.write_text(json.dumps(d, indent=2))
     --runs "$RUNS" \
     --output-dir "$out_dir" \
     $UPLOAD_FLAG \
-    2>&1 | tee "/tmp/bench-${label,,// /-}-$RUN_ID.log"
+    2>&1 | tee "/tmp/bench-${label,,}-$RUN_ID.log"
 }
 
 # ── Run benchmarks ────────────────────────────────────────────────────────────
@@ -298,7 +307,7 @@ fi
 
 # ── Comparison report ─────────────────────────────────────────────────────────
 hr
-echo -e "${BOLD}  📊 Results${RESET}"
+echo -e "${BOLD}  Results${RESET}"
 hr
 
 python3 - <<PYEOF
@@ -325,7 +334,7 @@ results = [r for r in [hybrid, cloud] if r]
 
 print()
 print('='*68)
-print(f'  🦀  {" $LOCAL_MODEL":16s} (local)  +  {"$CLOUD_MODEL":12s} (cloud)')
+print(f'  {" $LOCAL_MODEL":16s} (local)  +  {"$CLOUD_MODEL":12s} (cloud)')
 print(f'  Routing threshold: $THRESHOLD  |  Suite: $SUITE  |  Runs: $RUNS')
 print('='*68)
 print(f"  {'Configuration':<35} {'Score':>8}  {'Tasks':>5}")

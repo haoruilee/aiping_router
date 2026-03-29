@@ -221,7 +221,7 @@ export class OverrideScorer implements RuleScorer {
   }
 }
 
-/** Substrings in tool names that indicate image / multimodal generation (PinchBench task_13). */
+/** Substrings in tool names that indicate image / multimodal generation APIs. */
 const IMAGE_TOOL_PATTERNS = [
   'generate_image',
   'image_gen',
@@ -242,13 +242,10 @@ export function isImageGenTool(toolName: string): boolean {
 }
 
 /**
- * Optional small score bumps for PinchBench-shaped prompts. Does **not** force cloud —
- * default config leaves this disabled so routing stays as local as threshold allows.
- * Enable when you deliberately want slightly more cloud on known-hard shapes without
- * touching the global threshold.
+ * Optional small score bumps for certain workflow-heavy request shapes. Does not force cloud.
  */
-export class CloudHeuristicScorer implements RuleScorer {
-  readonly name = 'pinchbench_heuristic';
+export class WorkflowHintScorer implements RuleScorer {
+  readonly name = 'workflow_hint';
   /** Sum of per-signal caps; kept low so a single signal rarely exceeds threshold 85 alone. */
   readonly maxScore = 24;
 
@@ -321,8 +318,8 @@ export class CloudHeuristicScorer implements RuleScorer {
     points = Math.min(this.maxScore, points);
     const reason =
       hits.length > 0
-        ? `Optional PinchBench-shaped hints: ${hits.join(', ')} (+${points}, does not force cloud)`
-        : 'No PinchBench-shaped heuristic match';
+        ? `Workflow hints: ${hits.join(', ')} (+${points}, does not force cloud)`
+        : 'No workflow hint match';
 
     return { name: this.name, score: points, maxScore: this.maxScore, reason };
   }
@@ -443,16 +440,16 @@ export const DEFAULT_SCORERS: RuleScorer[] = [
 ];
 
 /**
- * Ordered scorer list: user directives first, then optional PinchBench heuristics,
- * then optional tool detection, then token/code/reasoning/multi-turn rules.
+ * Ordered scorer list: override directives, optional workflow hints, optional tool
+ * detection, then token/code/reasoning/multi-turn rules.
  */
 export function buildScorerChain(options: {
   preferCloudForTools: 'code' | 'all' | false;
-  pinchbenchHeuristics: boolean;
+  workflowHintBoost: boolean;
 }): RuleScorer[] {
   const chain: RuleScorer[] = [new OverrideScorer()];
-  if (options.pinchbenchHeuristics) {
-    chain.push(new CloudHeuristicScorer());
+  if (options.workflowHintBoost) {
+    chain.push(new WorkflowHintScorer());
   }
   const mode = options.preferCloudForTools;
   if (mode) {

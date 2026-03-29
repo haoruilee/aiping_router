@@ -6,7 +6,7 @@ Genetic algorithm that searches for the best combination of:
 - **Routing threshold** (0-100)
 - **Rule scorer weights** (token/code/reasoning/multi-turn multipliers)
 
-Evaluated against [PinchBench](https://github.com/pinchbench/skill) automated tasks.
+Evaluated against an external OpenClaw benchmark skill (you provide the git URL via `BENCH_SKILL_GIT_URL`).
 
 ## Quick Start (on your 8-GPU server)
 
@@ -16,8 +16,9 @@ pip install uv modelscope pyyaml
 npm install -g openclaw@latest
 openclaw plugins install @aiping.cn/model_router
 
-# 2. Set your AIPing key
+# 2. Set your AIPing key and benchmark skill URL
 export AIPING_KEY=QC-your-key-here
+export BENCH_SKILL_GIT_URL='https://github.com/your-org/your-agent-bench-skill.git'
 
 # 3. Preview the search plan (no models downloaded)
 ./train_scripts/run_search.sh --dry-run
@@ -32,7 +33,7 @@ export AIPING_KEY=QC-your-key-here
 train_scripts/
 ├── search_config.yaml    ← Edit this: models, GA params, fitness weights
 ├── genetic_search.py     ← GA implementation (population, crossover, mutation)
-├── evaluator.py          ← Runs PinchBench for one config, returns fitness
+├── evaluator.py          ← Runs the external skill benchmark for one config, returns fitness
 ├── ollama_manager.py     ← Pulls/creates Ollama models from ModelScope GGUFs
 ├── run_search.sh         ← Entry point (validates deps, starts services)
 ├── results/              ← Created during search
@@ -77,7 +78,7 @@ genetic:
 
 ```yaml
 fitness_weights:
-  accuracy: 0.60   # PinchBench task score  (most important)
+  accuracy: 0.60   # Mean task score from benchmark JSON (most important)
   ttft:     0.20   # time to first token    (penalise slow models)
   tps:      0.10   # tokens per second
   cost:     0.10   # cloud API calls (penalise expensive routing)
@@ -127,7 +128,7 @@ Initial population (random + default seeded)
 │  For each individual:      │
 │  1. Pull model from Ollama │
 │  2. Configure router       │
-│  3. Run PinchBench tasks   │
+│  3. Run benchmark tasks    │
 │  4. Compute fitness        │
 └────────────────────────────┘
          │

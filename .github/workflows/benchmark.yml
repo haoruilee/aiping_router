@@ -1,4 +1,4 @@
-name: PinchBench — Hybrid Model Score
+name: Agent benchmark — hybrid routing
 
 on:
   workflow_dispatch:
@@ -156,14 +156,21 @@ jobs:
           print(f'✅ Plugin ready: local={d[\"localModel\"]} cloud={d[\"cloudModel\"]} threshold={d[\"routingThreshold\"]}')
           "
 
-      # ── Clone PinchBench ─────────────────────────────────────────────────────
-      - name: Clone PinchBench skill
-        run: git clone --depth 1 https://github.com/pinchbench/skill.git /tmp/pinchbench
+      # ── Clone external benchmark skill (URL via repo secret) ───────────────────
+      - name: Clone benchmark skill
+        env:
+          BENCH_SKILL_GIT_URL: ${{ secrets.BENCH_SKILL_GIT_URL }}
+        run: |
+          if [ -z "$BENCH_SKILL_GIT_URL" ]; then
+            echo "Set repository secret BENCH_SKILL_GIT_URL to the skill git URL."
+            exit 1
+          fi
+          git clone --depth 1 "$BENCH_SKILL_GIT_URL" /tmp/agent-bench
 
       # ── Run 1: Hybrid ────────────────────────────────────────────────────────
       - name: "Run 1/2 — Hybrid (threshold=${{ env.THRESHOLD }})"
         run: |
-          cd /tmp/pinchbench
+          cd /tmp/agent-bench
           uv run scripts/benchmark.py \
             --model "aiping/aiping:claw" \
             --suite "$SUITE" \
@@ -190,7 +197,7 @@ jobs:
           sleep 8
           grep -E "阈值=0|threshold=0|就绪" /tmp/gateway2.log | head -3 || true
 
-          cd /tmp/pinchbench
+          cd /tmp/agent-bench
           uv run scripts/benchmark.py \
             --model "aiping/aiping:claw" \
             --suite "$SUITE" \
@@ -233,7 +240,7 @@ jobs:
 
           print()
           print('='*68)
-          print(f'  🦀  {LOCAL} (local)  +  {CLOUD} (cloud)')
+          print(f'  {LOCAL} (local)  +  {CLOUD} (cloud)')
           print('='*68)
           print(f"  {'Configuration':<35} {'Score':>8}  {'Tasks':>5}")
           print(f"  {'-'*35} {'-'*8}  {'-'*5}")

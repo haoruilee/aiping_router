@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-evaluator.py — Run PinchBench on one (local_model, cloud_model, config) combo
-               and return a structured FitnessResult.
+evaluator.py — Run an external agent benchmark skill on one (local_model, cloud_model, config)
+               combo and return a structured FitnessResult.
 
 The evaluator:
   1. Ensures the local model is available in Ollama
   2. Writes the router config (threshold + rule weights) to openclaw.json
   3. Registers the aiping provider with the gateway token
   4. Restarts the gateway so new threshold takes effect
-  5. Runs `uv run scripts/benchmark.py` for the configured suite
+  5. Runs `uv run scripts/benchmark.py` in the configured skill directory
   6. Parses the JSON result to compute fitness scores
 """
 from __future__ import annotations
@@ -69,7 +69,7 @@ class TaskResult:
 class FitnessResult:
     config:       RouterConfig
     fitness:      float            # combined score (higher = better)
-    accuracy:     float            # mean PinchBench score 0..100%
+    accuracy:     float            # mean benchmark task score 0..100%
     ttft_score:   float            # 1/(1+avg_ttft) normalised
     tps_score:    float            # avg TPS / 100 normalised
     cloud_ratio:  float            # fraction of requests that hit cloud
@@ -111,7 +111,7 @@ def _apply_router_config(config: RouterConfig, gw_token: str) -> None:
     cfg["routingThreshold"]  = config.threshold
     cfg["fallbackToCloud"]   = True
     cfg["debugRouting"]      = False
-    cfg["pinchbenchHeuristics"] = False
+    cfg["workflowHintBoost"] = False
     # Store rule weights as custom fields (router reads them if present)
     cfg["ruleWeights"] = {
         "token_count":     config.w_token,
@@ -170,13 +170,13 @@ def _restart_gateway() -> Optional[str]:
     return d.get("gateway", {}).get("auth", {}).get("token", "")
 
 
-def _run_pinchbench(
+def _run_agent_benchmark(
     skill_dir: str,
     suite: str,
     runs: int,
     output_dir: str,
 ) -> Optional[Dict[str, Any]]:
-    """Run PinchBench and return the parsed JSON result, or None on failure."""
+    """Run the skill's benchmark driver and return parsed JSON, or None on failure."""
     pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
     try:
         subprocess.run(
@@ -193,10 +193,10 @@ def _run_pinchbench(
             check=True,
         )
     except subprocess.CalledProcessError as e:
-        log.error("PinchBench failed: %s", e)
+        log.error("Benchmark run failed: %s", e)
         return None
     except subprocess.TimeoutExpired:
-        log.error("PinchBench timed out")
+        log.error("Benchmark run timed out")
         return None
 
     results = sorted(pathlib.Path(output_dir).glob("*.json"))
@@ -210,7 +210,7 @@ def _extract_metrics(
     bench_data: Dict[str, Any],
     fitness_weights: Dict[str, float],
 ) -> FitnessResult:
-    """Parse PinchBench JSON into a FitnessResult."""
+    """Parse benchmark JSON into a FitnessResult."""
     config_label = bench_data.get("model", "?")
     tasks_raw    = bench_data.get("tasks", [])
     efficiency   = bench_data.get("efficiency", {})
@@ -286,14 +286,14 @@ def evaluate(
     _apply_router_config(config, gw_token)
     time.sleep(2)  # let gateway pick up new config on next eval (it's reload=off)
 
-    # 2. Run PinchBench
+    # 2. Run external benchmark skill
     out_dir = f"{output_base}/{config.label().replace('/', '_')}"
-    bench_data = _run_pinchbench(skill_dir, suite, runs, out_dir)
+    bench_data = _run_agent_benchmark(skill_dir, suite, runs, out_dir)
     if bench_data is None:
         return FitnessResult(
             config=config, fitness=-1.0,
             accuracy=0, ttft_score=0, tps_score=0, cloud_ratio=1.0,
-            error="PinchBench failed or timed out",
+            error="Benchmark failed or timed out",
         )
 
     # 3. Parse metrics

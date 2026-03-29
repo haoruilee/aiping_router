@@ -245,7 +245,7 @@ openclaw gateway --restart
 | `localTimeoutMs` | `30000` | 本地请求超时毫秒数 |
 | `debugRouting` | `false` | 打印路由决策日志 |
 | `preferCloudForTools` | `code` | 工具路由：`code` / `all` / `false`（见插件 schema） |
-| `pinchbenchHeuristics` | `false` | 可选：对上述题型仅加少量分数、**从不强制云端**；默认关闭以尽量走本地 |
+| `workflowHintBoost` | `false` | 可选：对多步骤/多文件类请求加少量分、**从不强制云端**；默认关闭以尽量走本地 |
 
 ---
 
@@ -255,9 +255,9 @@ openclaw gateway --restart
 OpenClaw Gateway (localhost:18789)
   └── /aiping/v1/chat/completions  ← 代理端点
         └── model_router 插件
-              ├── RuleScorer（维度 + 可选 PinchBench 启发式，< 1ms）
+              ├── RuleScorer（维度 + 可选 workflow 提示，< 1ms）
               │     ├── OverrideScorer         @local/@cloud 强制（优先）
-              │     ├── CloudHeuristicScorer   可选小幅加分（默认关，不强制云）
+              │     ├── WorkflowHintScorer     可选小幅加分（默认关，不强制云）
               │     ├── ToolCallScorer         代码工具 + 生图工具
               │     ├── Token / Code / Reasoning / MultiTurn
               ├── LocalAdapter  → http://localhost:11434/v1/chat/completions
@@ -284,46 +284,46 @@ cd aiping_router
 npm install
 
 npm run build        # 编译 TypeScript
-npm test             # 单元测试（47 个）
+npm test             # 单元测试
 npm run test:e2e     # 端到端测试（需要 Ollama + AIPing Key）
 npm run release patch  # 发布新版本（自动测试 → tag → CI publish）
 ```
 
 ---
 
-## Benchmark — 持续测试不同模型组合
+## Benchmark — 外部 agent 技能评测
 
-使用 [PinchBench](https://github.com/pinchbench/skill) 自动化测试混合路由效果，支持本地和 CI 两种运行方式。
+使用符合 OpenClaw 技能约定的**外部**基准仓库（需自带 `scripts/benchmark.py` 等入口）。本仓库**不内置**任何具体评测题库 URL；克隆地址由你通过环境变量或 CI Secret 提供。
 
-### 本地一行运行
+### 本地运行
 
 ```bash
-# 快速冒烟测试（3 个任务，约 2 分钟）
+export BENCH_SKILL_GIT_URL='https://github.com/your-org/your-agent-bench-skill.git'
+
+# 快速冒烟（取决于技能内 preset / suite）
 AIPING_KEY=QC-xxx ./scripts/bench.sh --preset fast
 
-# 默认：qwen2.5:4b local + Kimi-K2.5 cloud
 AIPING_KEY=QC-xxx ./scripts/bench.sh
 
-# 自定义模型组合
 AIPING_KEY=QC-xxx ./scripts/bench.sh \
   --local-model llama3.2:3b \
   --cloud-model DeepSeek-V3.2 \
   --threshold 80
 
-# 纯云端基线
 AIPING_KEY=QC-xxx ./scripts/bench.sh --preset cloud-only
 
-# 查看所有选项
 ./scripts/bench.sh --help
 ```
 
-### CI 触发（GitHub Actions）
+若技能已克隆到本地，可省略 `BENCH_SKILL_GIT_URL`，改用 `--skill-dir /path/to/skill`。
+
+### CI（GitHub Actions）
+
+在仓库设置中配置 Secret **`BENCH_SKILL_GIT_URL`**（指向同一类技能仓库的 `git` URL），再触发 workflow：
 
 ```bash
-# 使用预设
 gh workflow run benchmark.yml -f preset=fast
 
-# 自定义模型（也可在 GitHub UI 手动填写）
 gh workflow run benchmark.yml \
   -f local_model=qwen2.5:7b \
   -f cloud_model=DeepSeek-V3.2 \

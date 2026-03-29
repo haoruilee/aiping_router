@@ -1,5 +1,5 @@
 /**
- * @aiping.cn/model_router — OpenClaw Plugin Entry Point (v1.5)
+ * @aiping.cn/model_router — OpenClaw Plugin Entry Point (v1.6)
  *
  * Real OpenClaw 2026.3.11 plugin API:
  *   - api.pluginConfig          → plugin's validated config (read-only snapshot)
@@ -81,7 +81,7 @@ export default function register(api: OpenClawPluginAPI): void {
               localTimeoutMs:      DEFAULT_CONFIG.localTimeoutMs,
               debugRouting:        DEFAULT_CONFIG.debugRouting,
               preferCloudForTools: DEFAULT_CONFIG.preferCloudForTools,
-              pinchbenchHeuristics: DEFAULT_CONFIG.pinchbenchHeuristics,
+              workflowHintBoost: DEFAULT_CONFIG.workflowHintBoost,
             };
             const saved = writePluginConfigToFile(api.id, config);
             if (saved) {
@@ -197,7 +197,7 @@ export default function register(api: OpenClawPluginAPI): void {
       res.end(JSON.stringify({
         ok: true,
         plugin: '@aiping.cn/model_router',
-        version: '1.5.0',
+        version: '1.6.0',
         configured: Boolean(liveCfg.aipingApiKey),
         localModel: liveCfg.localModel || '(未配置，请运行 openclaw model-router-setup)',
         cloudModel: liveCfg.cloudModel,
@@ -298,10 +298,10 @@ function buildConfig(raw: Record<string, unknown>): PluginConfig {
       if (v === false || v === 'false') return false as const;
       return 'code' as const; // default
     })(),
-    pinchbenchHeuristics:
-      typeof raw['pinchbenchHeuristics'] === 'boolean'
-        ? raw['pinchbenchHeuristics']
-        : DEFAULT_CONFIG.pinchbenchHeuristics,
+    workflowHintBoost:
+      typeof raw['workflowHintBoost'] === 'boolean'
+        ? raw['workflowHintBoost']
+        : DEFAULT_CONFIG.workflowHintBoost,
   };
 }
 
