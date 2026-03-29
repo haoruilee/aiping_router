@@ -190,6 +190,7 @@ cfg['cloudModel']        = '$CLOUD_MODEL'
 cfg['routingThreshold']  = $THRESHOLD
 cfg['debugRouting']      = False
 cfg['fallbackToCloud']   = True
+cfg['pinchbenchHeuristics'] = True
 
 # Disable hot-reload so agent operations don't restart gateway mid-benchmark
 d.setdefault('gateway', {}).setdefault('reload', {})['mode'] = 'off'

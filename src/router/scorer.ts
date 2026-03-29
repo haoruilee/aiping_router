@@ -1,16 +1,21 @@
 import type { ChatRequest, ScoringResult, RuleScorer } from '../types.js';
-import { DEFAULT_SCORERS, OverrideScorer } from './rules.js';
+import { DEFAULT_CONFIG } from '../types.js';
+import { OverrideScorer, buildScorerChain } from './rules.js';
 
 export class Scorer {
   private readonly scorers: RuleScorer[];
 
   /**
    * @param scorers  Full ordered list of scorers to apply.
-   *                 Defaults to DEFAULT_SCORERS (no tool detection).
-   *                 Pass a custom list (e.g. with ToolCallScorer prepended)
-   *                 when preferCloudForTools is enabled.
+   *                 Default matches Router: override → PinchBench heuristics (if enabled)
+   *                 → tool scorer (if enabled) → token/code/reasoning/multi-turn.
    */
-  constructor(scorers: RuleScorer[] = DEFAULT_SCORERS) {
+  constructor(
+    scorers: RuleScorer[] = buildScorerChain({
+      preferCloudForTools: DEFAULT_CONFIG.preferCloudForTools,
+      pinchbenchHeuristics: DEFAULT_CONFIG.pinchbenchHeuristics,
+    })
+  ) {
     this.scorers = scorers;
   }
 

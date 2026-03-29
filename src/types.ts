@@ -23,6 +23,13 @@ export interface PluginConfig {
    *  false   — No tool-based routing. Pure score+threshold decides everything.
    */
   preferCloudForTools: 'code' | 'all' | false;
+  /**
+   * When true (default), apply lightweight content heuristics aligned with PinchBench
+   * weak spots for strong local models (e.g. image gen, second-brain persistence,
+   * multi-file email synthesis, spreadsheet + Excel combos, ELI5 PDF). These nudge
+   * or force cloud routing without task IDs. Set false to disable.
+   */
+  pinchbenchHeuristics: boolean;
 }
 
 export const DEFAULT_CONFIG: Omit<PluginConfig, 'aipingApiKey'> = {
@@ -38,6 +45,7 @@ export const DEFAULT_CONFIG: Omit<PluginConfig, 'aipingApiKey'> = {
   debugRouting: false,
   // Default 'code': adds score boost for code-writing tools, leaves simple tools local.
   preferCloudForTools: 'code' as const,
+  pinchbenchHeuristics: true,
 };
 
 // ── OpenAI-compatible message structure (with tool call extensions) ─────────

@@ -4,7 +4,7 @@ import type {
   PluginConfig,
 } from '../types.js';
 import { Scorer } from './scorer.js';
-import { DEFAULT_SCORERS, ToolCallScorer } from './rules.js';
+import { buildScorerChain } from './rules.js';
 
 export class Router {
   private readonly scorer: Scorer;
@@ -14,11 +14,12 @@ export class Router {
     this.config = config;
 
     if (!scorer) {
-      const mode = config.preferCloudForTools;
-      const scorerList = mode
-        ? [new ToolCallScorer(mode === 'all' ? 'all' : 'code'), ...DEFAULT_SCORERS]
-        : DEFAULT_SCORERS;
-      this.scorer = new Scorer(scorerList);
+      this.scorer = new Scorer(
+        buildScorerChain({
+          preferCloudForTools: config.preferCloudForTools,
+          pinchbenchHeuristics: config.pinchbenchHeuristics,
+        })
+      );
     } else {
       this.scorer = scorer;
     }
