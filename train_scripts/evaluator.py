@@ -111,7 +111,7 @@ def _apply_router_config(config: RouterConfig, gw_token: str) -> None:
     cfg["routingThreshold"]  = config.threshold
     cfg["fallbackToCloud"]   = True
     cfg["debugRouting"]      = False
-    cfg["pinchbenchHeuristics"] = True
+    cfg["pinchbenchHeuristics"] = False
     # Store rule weights as custom fields (router reads them if present)
     cfg["ruleWeights"] = {
         "token_count":     config.w_token,

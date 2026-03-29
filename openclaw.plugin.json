@@ -1,6 +1,6 @@
 {
   "id": "model_router",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "name": "AIPing Model Router",
   "description": "Routes 'aiping:claw' model requests between your local Ollama model and AIPing cloud (Kimi-K2.5) using fast rule-based scoring.",
   "extensions": ["dist/index.js"],
@@ -76,8 +76,8 @@
       "pinchbenchHeuristics": {
         "type": "boolean",
         "title": "PinchBench-style heuristics",
-        "description": "Enable content heuristics (image gen, memory persistence, email corpus synthesis, market research, CSV+XLSX, ELI5+PDF) to route harder agent tasks toward cloud. Disable for pure threshold+token behavior.",
-        "default": true
+        "description": "Optional small score bumps for PinchBench-shaped prompts (never forces cloud). Default off to maximize local routing; enable if you use a lower threshold and want slightly more cloud on those shapes.",
+        "default": false
       }
     }
   }

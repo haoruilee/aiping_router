@@ -12,7 +12,7 @@ const base: PluginConfig = {
 describe('CloudHeuristicScorer', () => {
   const h = new CloudHeuristicScorer();
 
-  it('forces cloud on PinchBench image task phrasing', () => {
+  it('adds score on PinchBench image phrasing without forcing cloud', () => {
     const r = h.score({
       model: 'aiping:claw',
       messages: [
@@ -22,11 +22,13 @@ describe('CloudHeuristicScorer', () => {
             'Generate an image of a friendly robot sitting in a cozy coffee shop, reading a book. Save it as "robot_cafe.png" in the current directory.',
         },
       ],
-    }) as { forced?: string };
-    expect(r.forced).toBe('cloud');
+    }) as { forced?: string; score: number };
+    expect(r.forced).toBeUndefined();
+    expect(r.score).toBeGreaterThan(0);
+    expect(r.score).toBeLessThanOrEqual(h.maxScore);
   });
 
-  it('forces cloud on second-brain MEMORY.md pattern', () => {
+  it('adds score on second-brain MEMORY.md pattern', () => {
     const r = h.score({
       model: 'aiping:claw',
       messages: [
@@ -36,108 +38,36 @@ describe('CloudHeuristicScorer', () => {
             'Remember this for me. Save it to memory/MEMORY.md so a future session can recall it later.',
         },
       ],
-    }) as { forced?: string };
-    expect(r.forced).toBe('cloud');
+    }) as { forced?: string; score: number };
+    expect(r.forced).toBeUndefined();
+    expect(r.score).toBeGreaterThan(0);
   });
 
-  it('forces cloud on email corpus + alpha_summary', () => {
+  it('caps combined signals at maxScore', () => {
     const r = h.score({
       model: 'aiping:claw',
       messages: [
         {
           role: 'user',
           content:
-            'Search through all the emails in the emails/ folder about Project Alpha and save alpha_summary.md.',
+            'Generate an image. Save to x.png. Also save notes to memory/MEMORY.md for later.',
         },
       ],
-    }) as { forced?: string };
-    expect(r.forced).toBe('cloud');
-  });
-
-  it('forces cloud on competitive landscape + pricing', () => {
-    const r = h.score({
-      model: 'aiping:claw',
-      messages: [
-        {
-          role: 'user',
-          content:
-            'Create a competitive landscape analysis for the enterprise APM market segment. Include a comparison table and typical pricing models in market_research.md.',
-        },
-      ],
-    }) as { forced?: string };
-    expect(r.forced).toBe('cloud');
-  });
-
-  it('forces cloud on CSV + xlsx summary report', () => {
-    const r = h.score({
-      model: 'aiping:claw',
-      messages: [
-        {
-          role: 'user',
-          content:
-            'Read quarterly_sales.csv and company_expenses.xlsx and write data_summary.md with a summary report.',
-        },
-      ],
-    }) as { forced?: string };
-    expect(r.forced).toBe('cloud');
-  });
-
-  it('forces cloud on ELI5 + PDF', () => {
-    const r = h.score({
-      model: 'aiping:claw',
-      messages: [
-        {
-          role: 'user',
-          content:
-            'Read GPT4.pdf and write an ELI5 summary to eli5_summary.txt.',
-        },
-      ],
-    }) as { forced?: string };
-    expect(r.forced).toBe('cloud');
+    });
+    expect(r.score).toBeLessThanOrEqual(h.maxScore);
   });
 
   it('does not match arbitrary short chat', () => {
     const r = h.score({
       model: 'aiping:claw',
       messages: [{ role: 'user', content: 'Hello, fix this bug in app.ts' }],
-    }) as { forced?: string };
-    expect(r.forced).toBeUndefined();
+    });
     expect(r.score).toBe(0);
   });
 });
 
-describe('Router + pinchbenchHeuristics', () => {
-  it('routes image task to cloud even at threshold 100', () => {
-    const router = new Router({ ...base, routingThreshold: 100 });
-    const decision = router.decide({
-      model: 'aiping:claw',
-      messages: [
-        {
-          role: 'user',
-          content: 'Generate an image of a cat. Save it as out.png',
-        },
-      ],
-    });
-    expect(decision.target).toBe('cloud');
-    expect(decision.forced).toBe(true);
-  });
-
-  it('@local overrides PinchBench image heuristic', () => {
-    const router = new Router(base);
-    const decision = router.decide({
-      model: 'aiping:claw',
-      messages: [
-        {
-          role: 'user',
-          content: 'Generate an image of a cat. Save as cat.png @local',
-        },
-      ],
-    });
-    expect(decision.target).toBe('local');
-    expect(decision.forced).toBe(true);
-  });
-
-  it('disabling pinchbenchHeuristics keeps image prompt local at high threshold', () => {
+describe('Router defaults favor local', () => {
+  it('PinchBench image prompt stays local at threshold 100 without optional heuristics', () => {
     const router = new Router({
       ...base,
       routingThreshold: 100,
@@ -154,19 +84,65 @@ describe('Router + pinchbenchHeuristics', () => {
     });
     expect(decision.target).toBe('local');
   });
+
+  it('optional heuristics alone do not reach threshold 85', () => {
+    const router = new Router({
+      ...base,
+      routingThreshold: 85,
+      pinchbenchHeuristics: true,
+    });
+    const decision = router.decide({
+      model: 'aiping:claw',
+      messages: [
+        {
+          role: 'user',
+          content: 'Generate an image of a cat. Save it as out.png',
+        },
+      ],
+    });
+    expect(decision.target).toBe('local');
+    expect(decision.score).toBeLessThan(85);
+  });
+
+  it('@local overrides remain first', () => {
+    const router = new Router({ ...base, pinchbenchHeuristics: true });
+    const decision = router.decide({
+      model: 'aiping:claw',
+      messages: [
+        {
+          role: 'user',
+          content:
+            'Search all emails in emails/ and write alpha_summary.md @local',
+        },
+      ],
+    });
+    expect(decision.target).toBe('local');
+    expect(decision.forced).toBe(true);
+  });
 });
 
-describe('ToolCallScorer image tools', () => {
+describe('ToolCallScorer + image tools', () => {
   const scorer = new ToolCallScorer('code');
 
-  it('forces cloud when generate_image is in tools list', () => {
+  it('does not force cloud for generate_image tool (stays local unless code patterns score high)', () => {
     const req: ChatRequest = {
       model: 'aiping:claw',
       messages: [{ role: 'user', content: 'Make a diagram' }],
       tools: [{ type: 'function', function: { name: 'generate_image' } }],
     };
-    const r = scorer.score(req) as { forced?: string };
-    expect(r.forced).toBe('cloud');
+    const r = scorer.score(req) as { forced?: string; score: number };
+    expect(r.forced).toBeUndefined();
+    expect(r.score).toBe(0);
+  });
+
+  it('isImageGenTool excludes image tools from code-tool +20', () => {
+    const req: ChatRequest = {
+      model: 'aiping:claw',
+      messages: [{ role: 'user', content: 'Draw something' }],
+      tools: [{ type: 'function', function: { name: 'mcp_generate_image' } }],
+    };
+    const r = scorer.score(req) as { score: number };
+    expect(r.score).toBe(0);
   });
 
   it('isImageGenTool detects common names', () => {

@@ -245,7 +245,7 @@ openclaw gateway --restart
 | `localTimeoutMs` | `30000` | 本地请求超时毫秒数 |
 | `debugRouting` | `false` | 打印路由决策日志 |
 | `preferCloudForTools` | `code` | 工具路由：`code` / `all` / `false`（见插件 schema） |
-| `pinchbenchHeuristics` | `true` | 按 PinchBench 常见难题型（生图、MEMORY.md、多邮件综合、竞品报告、CSV+XLSX、ELI5+PDF）强制或倾向云端；`false` 则仅阈值+原有维度 |
+| `pinchbenchHeuristics` | `false` | 可选：对上述题型仅加少量分数、**从不强制云端**；默认关闭以尽量走本地 |
 
 ---
 
@@ -257,7 +257,7 @@ OpenClaw Gateway (localhost:18789)
         └── model_router 插件
               ├── RuleScorer（维度 + 可选 PinchBench 启发式，< 1ms）
               │     ├── OverrideScorer         @local/@cloud 强制（优先）
-              │     ├── CloudHeuristicScorer   生图/MEMORY/邮件综研等 → 云端（可关）
+              │     ├── CloudHeuristicScorer   可选小幅加分（默认关，不强制云）
               │     ├── ToolCallScorer         代码工具 + 生图工具
               │     ├── Token / Code / Reasoning / MultiTurn
               ├── LocalAdapter  → http://localhost:11434/v1/chat/completions

@@ -24,10 +24,10 @@ export interface PluginConfig {
    */
   preferCloudForTools: 'code' | 'all' | false;
   /**
-   * When true (default), apply lightweight content heuristics aligned with PinchBench
-   * weak spots for strong local models (e.g. image gen, second-brain persistence,
-   * multi-file email synthesis, spreadsheet + Excel combos, ELI5 PDF). These nudge
-   * or force cloud routing without task IDs. Set false to disable.
+   * When true, add a small optional score bump for PinchBench-shaped prompts (image,
+   * MEMORY.md workflows, email corpus synthesis, etc.) so they cross the threshold
+   * more often if you use a lower threshold — never forces cloud. Default false so
+   * out-of-the-box routing stays maximally local (threshold + token/code/reasoning/multi-turn only).
    */
   pinchbenchHeuristics: boolean;
 }
@@ -45,7 +45,7 @@ export const DEFAULT_CONFIG: Omit<PluginConfig, 'aipingApiKey'> = {
   debugRouting: false,
   // Default 'code': adds score boost for code-writing tools, leaves simple tools local.
   preferCloudForTools: 'code' as const,
-  pinchbenchHeuristics: true,
+  pinchbenchHeuristics: false,
 };
 
 // ── OpenAI-compatible message structure (with tool call extensions) ─────────
