@@ -1,11 +1,26 @@
 // Shared type definitions for @aiping.cn/model_router
 
+/** Routing / model selection bucket: chat vs vision-language vs media generation. */
+export type ModelTask = 'text' | 'vlm' | 'image' | 'video';
+
 export interface PluginConfig {
   aipingApiKey: string;
   localProxyUrl: string;
   localProxyKey: string;
   localModel: string;
   cloudModel: string;
+  /** Optional: local VLM; empty → use localModel for vision requests. */
+  localVlmModel: string;
+  /** Optional: local T2I; empty → use localModel. */
+  localImageModel: string;
+  /** Optional: local video; empty → use localModel. */
+  localVideoModel: string;
+  /** Cloud model for vision / multimodal chat (default: Doubao-Seed-2.0-pro). */
+  cloudVlmModel: string;
+  /** Cloud model for image generation (default: Doubao-Seedream-5.0-lite). */
+  cloudImageModel: string;
+  /** Cloud model for video generation (default: Doubao-Seedance-1.0-Pro-Fast). */
+  cloudVideoModel: string;
   routingThreshold: number;
   fallbackToCloud: boolean;
   localTimeoutMs: number;
@@ -25,12 +40,22 @@ export interface PluginConfig {
   preferCloudForTools: 'code' | 'all' | false;
 }
 
+export const DEFAULT_CLOUD_VLM_MODEL = 'Doubao-Seed-2.0-pro';
+export const DEFAULT_CLOUD_IMAGE_MODEL = 'Doubao-Seedream-5.0-lite';
+export const DEFAULT_CLOUD_VIDEO_MODEL = 'Doubao-Seedance-1.0-Pro-Fast';
+
 export const DEFAULT_CONFIG: Omit<PluginConfig, 'aipingApiKey'> = {
   localProxyUrl: 'http://localhost:11434',
   localProxyKey: '',
   // No hardcoded local model — auto-detected from Ollama at setup time.
   localModel: '',
   cloudModel: 'Kimi-K2.5',
+  localVlmModel: '',
+  localImageModel: '',
+  localVideoModel: '',
+  cloudVlmModel: DEFAULT_CLOUD_VLM_MODEL,
+  cloudImageModel: DEFAULT_CLOUD_IMAGE_MODEL,
+  cloudVideoModel: DEFAULT_CLOUD_VIDEO_MODEL,
   // High threshold keeps ~90% of requests on the local model. Max score = 100.
   routingThreshold: 85,
   fallbackToCloud: true,

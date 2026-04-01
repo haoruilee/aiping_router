@@ -384,7 +384,7 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
 
   blank();
   console.log(c.bold('╔══════════════════════════════════════════════════════════╗'));
-  console.log(c.bold('║    🚀  AIPing Model Router  配置向导  v1.2              ║'));
+  console.log(c.bold('║    🚀  AIPing Model Router  配置向导  v1.3              ║'));
   console.log(c.bold('║    智能路由：本地小模型 + 云端强模型，自动检测修复       ║'));
   console.log(c.bold('╚══════════════════════════════════════════════════════════╝'));
   blank();
@@ -417,7 +417,7 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
     step('第 1 步 / 4  ·  配置 AIPing 云端 API Key');
 
     info('AIPing 是本插件对接的云端 AI 服务（https://aiping.cn/api/v1）。');
-    info('云端模型（Kimi-K2.5）仅在复杂请求时使用，约 10% 的请求量。');
+    info('普通对话可走本地；复杂对话路由到云端「文本模型」。带图 / 生图 / 生视频会分别走对应云端模型。');
     blank();
     info('  访问 ' + c.cyan('https://aiping.cn/user/user-center'));
     info('  复制页面上 ' + c.bold(c.cyan('QC-')) + ' 开头的 API Key');
@@ -429,6 +429,19 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
       existingConfig.aipingApiKey,
       cloudModel
     );
+    blank();
+
+    info('  下列为豆包系列默认（与 AIPing 控制台模型名一致即可）；直接回车保留括号内默认值。');
+    blank();
+    const defVlm = existingConfig.cloudVlmModel ?? DEFAULT_CONFIG.cloudVlmModel;
+    const defImg = existingConfig.cloudImageModel ?? DEFAULT_CONFIG.cloudImageModel;
+    const defVid = existingConfig.cloudVideoModel ?? DEFAULT_CONFIG.cloudVideoModel;
+    const vlmIn = await rl.question(`  云端 VLM / 多模态模型 [${defVlm}]：`);
+    const imgIn = await rl.question(`  云端文生图模型 [${defImg}]：`);
+    const vidIn = await rl.question(`  云端文生视频模型 [${defVid}]：`);
+    const cloudVlmModel = vlmIn.trim() || defVlm;
+    const cloudImageModel = imgIn.trim() || defImg;
+    const cloudVideoModel = vidIn.trim() || defVid;
     blank();
 
     // ── 第二步：本地模型配置 ────────────────────────────────────────────────
@@ -472,6 +485,24 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
     const localProxyKey = localProxyKeyInput.trim() || existingConfig.localProxyKey || '';
     blank();
 
+    tip('若本地另有 VLM / 生图 / 生视频模型，可单独指定；留空则与上面「主本地模型」相同。');
+    const defLocVlm = existingConfig.localVlmModel ?? '';
+    const defLocImg = existingConfig.localImageModel ?? '';
+    const defLocVid = existingConfig.localVideoModel ?? '';
+    const locVlmIn = await rl.question(
+      defLocVlm ? `  本地 VLM 模型 [${defLocVlm}]：` : '  本地 VLM 模型（可选，回车跳过）：'
+    );
+    const locImgIn = await rl.question(
+      defLocImg ? `  本地生图模型 [${defLocImg}]：` : '  本地生图模型（可选）：'
+    );
+    const locVidIn = await rl.question(
+      defLocVid ? `  本地视频模型 [${defLocVid}]：` : '  本地视频模型（可选）：'
+    );
+    const localVlmModel = (locVlmIn.trim() || defLocVlm).trim();
+    const localImageModel = (locImgIn.trim() || defLocImg).trim();
+    const localVideoModel = (locVidIn.trim() || defLocVid).trim();
+    blank();
+
     // ── 第三步：路由策略 ────────────────────────────────────────────────────
     step('第 3 步 / 4  ·  路由策略配置');
 
@@ -501,6 +532,10 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
     info('  你也可以在消息末尾加指令强制覆盖路由决策：');
     info(c.dim('  "帮我写个函数 @local"    → 强制走本地'));
     info(c.dim('  "系统架构评审 @cloud"   → 强制走云端'));
+    info(c.dim('  "@task:image / @image"   → 强制按生图选模型'));
+    info(c.dim('  "@task:video / @video"   → 强制按生视频选模型'));
+    info(c.dim('  "@task:vlm"             → 强制多模态 / VLM 模型'));
+    info(c.dim('  "@task:text / @text"    → 强制文本对话模型'));
     blank();
 
     // ── 第四步：最终验证 + 设置默认模型 ───────────────────────────────────
@@ -512,6 +547,12 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
       localProxyKey,
       localModel,
       cloudModel,
+      localVlmModel,
+      localImageModel,
+      localVideoModel,
+      cloudVlmModel,
+      cloudImageModel,
+      cloudVideoModel,
       routingThreshold,
       fallbackToCloud,
       localTimeoutMs:      existingConfig.localTimeoutMs      ?? DEFAULT_CONFIG.localTimeoutMs,
@@ -613,8 +654,11 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
       : (aipingApiKey ? c.red('❌ 验证失败') : c.dim('— 未配置'));
 
     info('  ┌─────────────────────────────────────────────────┐');
-    info(`  │  本地模型  ${localModel.padEnd(20)} ${localStatus.padEnd(10)}`);
-    info(`  │  云端模型  ${cloudModel.padEnd(20)} ${cloudStatus.padEnd(10)}`);
+    info(`  │  本地主模型 ${localModel.padEnd(18)} ${localStatus.padEnd(10)}`);
+    info(`  │  云端文本   ${cloudModel.padEnd(18)} ${cloudStatus.padEnd(10)}`);
+    info(`  │  云端 VLM   ${cloudVlmModel.padEnd(18)} ${cloudStatus.padEnd(10)}`);
+    info(`  │  云端生图   ${cloudImageModel.padEnd(18)} ${cloudStatus.padEnd(10)}`);
+    info(`  │  云端生视频 ${cloudVideoModel.padEnd(18)} ${cloudStatus.padEnd(10)}`);
     info(`  │  路由阈值  ${String(routingThreshold).padEnd(20)} （~90% 走本地）`);
     info(`  │  失败回退  ${fallbackToCloud ? '开启' : '关闭'}`);
     info('  └─────────────────────────────────────────────────┘');

@@ -20,10 +20,11 @@ export class CloudAdapter {
     };
   }
 
-  async chat(request: ChatRequest): Promise<ChatResponse> {
+  async chat(request: ChatRequest, resolvedModel?: string): Promise<ChatResponse> {
+    const model = resolvedModel ?? this.config.cloudModel;
     const body = JSON.stringify({
       ...request,
-      model: this.config.cloudModel,
+      model,
       stream: false,
     });
 
@@ -52,10 +53,11 @@ export class CloudAdapter {
     return { ...data, model: request.model };
   }
 
-  async *chatStream(request: ChatRequest): AsyncGenerator<string> {
+  async *chatStream(request: ChatRequest, resolvedModel?: string): AsyncGenerator<string> {
+    const model = resolvedModel ?? this.config.cloudModel;
     const body = JSON.stringify({
       ...request,
-      model: this.config.cloudModel,
+      model,
       stream: true,
     });
 
