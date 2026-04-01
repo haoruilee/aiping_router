@@ -34,6 +34,12 @@
         "description": "Name of the local model to use (auto-detected from Ollama at setup time)",
         "default": ""
       },
+      "localDisableThinking": {
+        "type": "boolean",
+        "title": "Disable thinking on local model",
+        "description": "When true, adds disableThinking: true to local Ollama chat requests if the client did not set it (turns off reasoning/thinking output by default).",
+        "default": true
+      },
       "cloudModel": {
         "type": "string",
         "title": "Cloud Model Name",

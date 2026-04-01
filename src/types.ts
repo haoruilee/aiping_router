@@ -15,6 +15,12 @@ export interface PluginConfig {
   localImageModel: string;
   /** Optional: local video; empty → use localModel. */
   localVideoModel: string;
+  /**
+   * When true (default), forwards `disableThinking: true` on local chat requests
+   * (Ollama / thinking-capable models) so reasoning blocks stay off unless the
+   * client already sent an explicit `disableThinking` value.
+   */
+  localDisableThinking: boolean;
   /** Cloud model for vision / multimodal chat (default: Doubao-Seed-2.0-pro). */
   cloudVlmModel: string;
   /** Cloud model for image generation (default: Doubao-Seedream-5.0-lite). */
@@ -53,6 +59,7 @@ export const DEFAULT_CONFIG: Omit<PluginConfig, 'aipingApiKey'> = {
   localVlmModel: '',
   localImageModel: '',
   localVideoModel: '',
+  localDisableThinking: true,
   cloudVlmModel: DEFAULT_CLOUD_VLM_MODEL,
   cloudImageModel: DEFAULT_CLOUD_IMAGE_MODEL,
   cloudVideoModel: DEFAULT_CLOUD_VIDEO_MODEL,
