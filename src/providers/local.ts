@@ -25,10 +25,11 @@ export class LocalAdapter {
     return headers;
   }
 
-  async chat(request: ChatRequest): Promise<ChatResponse> {
+  async chat(request: ChatRequest, resolvedModel?: string): Promise<ChatResponse> {
+    const model = resolvedModel ?? this.config.localModel;
     const body = JSON.stringify({
       ...request,
-      model: this.config.localModel,
+      model,
       stream: false,
     });
 
@@ -70,10 +71,11 @@ export class LocalAdapter {
     }
   }
 
-  async *chatStream(request: ChatRequest): AsyncGenerator<string> {
+  async *chatStream(request: ChatRequest, resolvedModel?: string): AsyncGenerator<string> {
+    const model = resolvedModel ?? this.config.localModel;
     const body = JSON.stringify({
       ...request,
-      model: this.config.localModel,
+      model,
       stream: true,
     });
 

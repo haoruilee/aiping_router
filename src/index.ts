@@ -1,5 +1,5 @@
 /**
- * @aiping.cn/model_router — OpenClaw Plugin Entry Point (v1.4)
+ * @aiping.cn/model_router — OpenClaw Plugin Entry Point (v1.5)
  *
  * Real OpenClaw 2026.3.11 plugin API:
  *   - api.pluginConfig          → plugin's validated config (read-only snapshot)
@@ -16,6 +16,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import type { PluginConfig } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 import { Router } from './router/router.js';
+import { detectRouterTask, resolveModelsForTask } from './router/task.js';
 import { LocalAdapter } from './providers/local.js';
 import { CloudAdapter } from './providers/cloud.js';
 import { runSetupWizard } from './setup/wizard.js';
@@ -42,7 +43,13 @@ export default function register(api: OpenClawPluginAPI): void {
         .option('--local-model <model>',       '本地模型名称（不填则使用 Ollama 检测到的第一个模型）')
         .option('--local-proxy-url <url>',     '本地 Ollama 地址', 'http://localhost:11434')
         .option('--local-proxy-key <key>',     '本地代理鉴权 Key（可选）')
-        .option('--cloud-model <model>',       '云端模型名称', 'Kimi-K2.5')
+        .option('--cloud-model <model>',       '云端文本对话模型', 'Kimi-K2.5')
+        .option('--cloud-vlm-model <model>',   '云端 VLM / 多模态模型')
+        .option('--cloud-image-model <model>', '云端文生图模型')
+        .option('--cloud-video-model <model>', '云端文生视频模型')
+        .option('--local-vlm-model <model>',   '本地 VLM（可选，空则同主本地模型）')
+        .option('--local-image-model <model>', '本地生图（可选）')
+        .option('--local-video-model <model>', '本地视频（可选）')
         .option('--routing-threshold <n>',     '路由阈值 0-100（越高越偏本地）', '85')
         .option('--no-fallback',               '禁用本地失败时自动切换到云端')
         .action(async (opts: unknown) => {
@@ -76,6 +83,12 @@ export default function register(api: OpenClawPluginAPI): void {
               localProxyKey:       o.localProxyKey    ?? '',
               localModel:          resolvedLocalModel,
               cloudModel:          o.cloudModel       ?? DEFAULT_CONFIG.cloudModel,
+              localVlmModel:       o.localVlmModel    ?? DEFAULT_CONFIG.localVlmModel,
+              localImageModel:     o.localImageModel  ?? DEFAULT_CONFIG.localImageModel,
+              localVideoModel:     o.localVideoModel  ?? DEFAULT_CONFIG.localVideoModel,
+              cloudVlmModel:       o.cloudVlmModel    ?? DEFAULT_CONFIG.cloudVlmModel,
+              cloudImageModel:     o.cloudImageModel  ?? DEFAULT_CONFIG.cloudImageModel,
+              cloudVideoModel:     o.cloudVideoModel  ?? DEFAULT_CONFIG.cloudVideoModel,
               routingThreshold:    parseInt(o.routingThreshold ?? '85', 10) || DEFAULT_CONFIG.routingThreshold,
               fallbackToCloud:     o.fallback         ?? DEFAULT_CONFIG.fallbackToCloud,
               localTimeoutMs:      DEFAULT_CONFIG.localTimeoutMs,
@@ -89,7 +102,10 @@ export default function register(api: OpenClawPluginAPI): void {
               const provResult = configureOpenClawProvider();
               console.log(`\n✅ 配置已保存！`);
               console.log(`   本地模型: ${config.localModel} → ${config.localProxyUrl}`);
-              console.log(`   云端模型: ${config.cloudModel}`);
+              console.log(`   云端文本: ${config.cloudModel}`);
+              console.log(`   云端 VLM: ${config.cloudVlmModel}`);
+              console.log(`   云端生图: ${config.cloudImageModel}`);
+              console.log(`   云端生视频: ${config.cloudVideoModel}`);
               console.log(`   路由阈值: ${config.routingThreshold}`);
               if (provResult.success) {
                 console.log(`   OpenClaw 默认模型: ${provResult.modelRef}`);
@@ -145,11 +161,13 @@ export default function register(api: OpenClawPluginAPI): void {
         const liveCfg = buildConfig(readPluginConfigFromFile(api.id) ?? api.pluginConfig ?? {});
         const router = new Router(liveCfg);
         const decision = router.decide(chatReq);
+        const task = detectRouterTask(chatReq);
+        const resolved = resolveModelsForTask(liveCfg, task);
 
         const modelName =
-          decision.target === "cloud" ? liveCfg.cloudModel : liveCfg.localModel;
+          decision.target === "cloud" ? resolved.cloudModel : resolved.localModel;
         api.logger.info(
-          `[model_router] → ${
+          `[model_router] task=${task} → ${
             decision.target === "cloud" ? "CLOUD" : "LOCAL/OLLAMA"
           } (${modelName})`
         );
@@ -161,10 +179,23 @@ export default function register(api: OpenClawPluginAPI): void {
             Connection: 'keep-alive',
             ...corsHeaders(),
           });
-          await pipeStream(decision.target, liveCfg, chatReq, res);
+          await pipeStream(
+            decision.target,
+            liveCfg,
+            chatReq,
+            res,
+            resolved.localModel,
+            resolved.cloudModel
+          );
           res.end();
         } else {
-          const response = await fetchChat(decision.target, liveCfg, chatReq);
+          const response = await fetchChat(
+            decision.target,
+            liveCfg,
+            chatReq,
+            resolved.localModel,
+            resolved.cloudModel
+          );
           const json = JSON.stringify(response);
           res.writeHead(200, {
             'Content-Type': 'application/json',
@@ -196,10 +227,16 @@ export default function register(api: OpenClawPluginAPI): void {
       res.end(JSON.stringify({
         ok: true,
         plugin: '@aiping.cn/model_router',
-        version: '1.4.0',
+        version: '1.5.0',
         configured: Boolean(liveCfg.aipingApiKey),
         localModel: liveCfg.localModel || '(未配置，请运行 openclaw model-router-setup)',
         cloudModel: liveCfg.cloudModel,
+        cloudVlmModel: liveCfg.cloudVlmModel,
+        cloudImageModel: liveCfg.cloudImageModel,
+        cloudVideoModel: liveCfg.cloudVideoModel,
+        localVlmModel: liveCfg.localVlmModel || null,
+        localImageModel: liveCfg.localImageModel || null,
+        localVideoModel: liveCfg.localVideoModel || null,
         routingThreshold: liveCfg.routingThreshold,
         proxyEndpoint: '/aiping/v1/chat/completions',
       }));
@@ -215,7 +252,8 @@ export default function register(api: OpenClawPluginAPI): void {
     );
   } else {
     api.logger.info(
-      `[model_router] ✅ 就绪 | 本地=${cfg.localModel} | 云端=${cfg.cloudModel}` +
+      `[model_router] ✅ 就绪 | 本地=${cfg.localModel} | 云端文本=${cfg.cloudModel}` +
+      ` | VLM=${cfg.cloudVlmModel} | 生图=${cfg.cloudImageModel} | 生视频=${cfg.cloudVideoModel}` +
       ` | 阈值=${cfg.routingThreshold} | 代理=/aiping/v1/chat/completions`
     );
   }
@@ -228,25 +266,28 @@ export default function register(api: OpenClawPluginAPI): void {
 async function fetchChat(
   target: 'local' | 'cloud',
   cfg: PluginConfig,
-  req: unknown
+  req: unknown,
+  resolvedLocalModel: string,
+  resolvedCloudModel: string
 ): Promise<unknown> {
   const local = new LocalAdapter(cfg);
   const cloud = new CloudAdapter(cfg);
+  const chatReq = req as Parameters<typeof local.chat>[0];
   if (target === 'local') {
     try {
-      return await local.chat(req as Parameters<typeof local.chat>[0]);
+      return await local.chat(chatReq, resolvedLocalModel);
     } catch (e) {
       if (cfg.fallbackToCloud) {
-        return cloud.chat(req as Parameters<typeof cloud.chat>[0]);
+        return cloud.chat(chatReq, resolvedCloudModel);
       }
       throw e;
     }
   }
   try {
-    return await cloud.chat(req as Parameters<typeof cloud.chat>[0]);
+    return await cloud.chat(chatReq, resolvedCloudModel);
   } catch (e) {
     if (cfg.fallbackToCloud) {
-      return local.chat(req as Parameters<typeof local.chat>[0]);
+      return local.chat(chatReq, resolvedLocalModel);
     }
     throw e;
   }
@@ -256,24 +297,26 @@ async function pipeStream(
   target: 'local' | 'cloud',
   cfg: PluginConfig,
   req: unknown,
-  res: ServerResponse
+  res: ServerResponse,
+  resolvedLocalModel: string,
+  resolvedCloudModel: string
 ): Promise<void> {
   const local = new LocalAdapter(cfg);
   const cloud = new CloudAdapter(cfg);
   const r = req as Parameters<typeof local.chatStream>[0];
   if (target === 'local') {
     try {
-      for await (const chunk of local.chatStream(r)) res.write(chunk);
+      for await (const chunk of local.chatStream(r, resolvedLocalModel)) res.write(chunk);
       return;
     } catch (e) {
       if (cfg.fallbackToCloud) {
-        for await (const chunk of cloud.chatStream(r)) res.write(chunk);
+        for await (const chunk of cloud.chatStream(r, resolvedCloudModel)) res.write(chunk);
         return;
       }
       throw e;
     }
   }
-  for await (const chunk of cloud.chatStream(r)) res.write(chunk);
+  for await (const chunk of cloud.chatStream(r, resolvedCloudModel)) res.write(chunk);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -287,6 +330,12 @@ function buildConfig(raw: Record<string, unknown>): PluginConfig {
     localProxyKey:    (raw['localProxyKey']   as string)  ?? '',
     localModel:       (raw['localModel']      as string)  ?? DEFAULT_CONFIG.localModel,
     cloudModel:       (raw['cloudModel']      as string)  ?? DEFAULT_CONFIG.cloudModel,
+    localVlmModel:    (raw['localVlmModel']   as string)  ?? DEFAULT_CONFIG.localVlmModel,
+    localImageModel:  (raw['localImageModel'] as string)  ?? DEFAULT_CONFIG.localImageModel,
+    localVideoModel:  (raw['localVideoModel'] as string)  ?? DEFAULT_CONFIG.localVideoModel,
+    cloudVlmModel:    (raw['cloudVlmModel']    as string)  || DEFAULT_CONFIG.cloudVlmModel,
+    cloudImageModel:  (raw['cloudImageModel']  as string)  || DEFAULT_CONFIG.cloudImageModel,
+    cloudVideoModel:  (raw['cloudVideoModel']  as string)  || DEFAULT_CONFIG.cloudVideoModel,
     routingThreshold: typeof raw['routingThreshold'] === 'number' ? raw['routingThreshold'] : DEFAULT_CONFIG.routingThreshold,
     fallbackToCloud:  typeof raw['fallbackToCloud']  === 'boolean' ? raw['fallbackToCloud']  : DEFAULT_CONFIG.fallbackToCloud,
     localTimeoutMs:   typeof raw['localTimeoutMs']   === 'number' ? raw['localTimeoutMs']   : DEFAULT_CONFIG.localTimeoutMs,
@@ -379,6 +428,12 @@ interface SetupOptions {
   localProxyUrl?:    string;
   localProxyKey?:    string;
   cloudModel?:       string;
+  cloudVlmModel?:    string;
+  cloudImageModel?:  string;
+  cloudVideoModel?:  string;
+  localVlmModel?:    string;
+  localImageModel?:  string;
+  localVideoModel?:  string;
   routingThreshold?: string;
   fallback?:         boolean;
 }
