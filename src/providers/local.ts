@@ -25,11 +25,18 @@ export class LocalAdapter {
     return headers;
   }
 
-  /** Merge default `disableThinking` for local Ollama when the client did not set it. */
+  /**
+   * Ollama's OpenAI-compatible `/v1/chat/completions` uses `think: false` to disable
+   * reasoning (e.g. Qwen3); `disableThinking` is not recognized and is ignored.
+   */
   private mergeLocalThinkingOptions(request: ChatRequest): ChatRequest {
     if (!this.config.localDisableThinking) return request;
-    if (Object.prototype.hasOwnProperty.call(request, 'disableThinking')) return request;
-    return { ...request, disableThinking: true };
+    if (Object.prototype.hasOwnProperty.call(request, 'think')) return request;
+    if (Object.prototype.hasOwnProperty.call(request, 'disableThinking')) {
+      if (request.disableThinking === false) return request;
+      return { ...request, think: false };
+    }
+    return { ...request, think: false };
   }
 
   private buildLocalChatBody(

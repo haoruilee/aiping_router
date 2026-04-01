@@ -1,6 +1,6 @@
 {
   "id": "model_router",
-  "version": "1.0.0",
+  "version": "1.2.14",
   "name": "AIPing Model Router",
   "description": "Routes 'aiping:claw' model requests between your local Ollama model and AIPing cloud (Kimi-K2.5) using fast rule-based scoring.",
   "extensions": ["dist/index.js"],
@@ -37,7 +37,7 @@
       "localDisableThinking": {
         "type": "boolean",
         "title": "Disable thinking on local model",
-        "description": "When true, adds disableThinking: true to local Ollama chat requests if the client did not set it (turns off reasoning/thinking output by default).",
+        "description": "When true, adds think: false to local Ollama /v1/chat/completions when the client did not set think (Ollama ignores disableThinking; this turns off reasoning for Qwen3-class models).",
         "default": true
       },
       "cloudModel": {
