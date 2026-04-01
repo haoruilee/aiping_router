@@ -16,9 +16,8 @@ export interface PluginConfig {
   /** Optional: local video; empty → use localModel. */
   localVideoModel: string;
   /**
-   * When true (default), forwards `disableThinking: true` on local chat requests
-   * (Ollama / thinking-capable models) so reasoning blocks stay off unless the
-   * client already sent an explicit `disableThinking` value.
+   * When true (default), adds `think: false` on local Ollama `/v1/chat/completions`
+   * requests so reasoning stays off unless the client set `think` or `disableThinking`.
    */
   localDisableThinking: boolean;
   /** Cloud model for vision / multimodal chat (default: Doubao-Seed-2.0-pro). */
