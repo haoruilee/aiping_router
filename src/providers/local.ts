@@ -25,13 +25,29 @@ export class LocalAdapter {
     return headers;
   }
 
-  async chat(request: ChatRequest, resolvedModel?: string): Promise<ChatResponse> {
+  /** Merge default `disableThinking` for local Ollama when the client did not set it. */
+  private mergeLocalThinkingOptions(request: ChatRequest): ChatRequest {
+    if (!this.config.localDisableThinking) return request;
+    if (Object.prototype.hasOwnProperty.call(request, 'disableThinking')) return request;
+    return { ...request, disableThinking: true };
+  }
+
+  private buildLocalChatBody(
+    request: ChatRequest,
+    resolvedModel: string | undefined,
+    stream: boolean
+  ): string {
     const model = resolvedModel ?? this.config.localModel;
-    const body = JSON.stringify({
-      ...request,
+    const payload = this.mergeLocalThinkingOptions(request);
+    return JSON.stringify({
+      ...payload,
       model,
-      stream: false,
+      stream,
     });
+  }
+
+  async chat(request: ChatRequest, resolvedModel?: string): Promise<ChatResponse> {
+    const body = this.buildLocalChatBody(request, resolvedModel, false);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(
@@ -72,12 +88,7 @@ export class LocalAdapter {
   }
 
   async *chatStream(request: ChatRequest, resolvedModel?: string): AsyncGenerator<string> {
-    const model = resolvedModel ?? this.config.localModel;
-    const body = JSON.stringify({
-      ...request,
-      model,
-      stream: true,
-    });
+    const body = this.buildLocalChatBody(request, resolvedModel, true);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(

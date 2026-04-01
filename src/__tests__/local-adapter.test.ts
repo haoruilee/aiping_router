@@ -68,6 +68,106 @@ describe('LocalAdapter.listModels()', () => {
   });
 });
 
+describe('LocalAdapter localDisableThinking', () => {
+  it('adds disableThinking: true to local chat body when enabled and client omits it', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          id: '1',
+          object: 'chat.completion',
+          created: 0,
+          model: 'qwen2.5:4b',
+          choices: [
+            {
+              index: 0,
+              message: { role: 'assistant', content: 'hi' },
+              finish_reason: 'stop',
+            },
+          ],
+        }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const adapter = new LocalAdapter({ ...config, localDisableThinking: true });
+    await adapter.chat({
+      model: 'aiping:claw',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0]!;
+    const parsed = JSON.parse((init as RequestInit).body as string);
+    expect(parsed.disableThinking).toBe(true);
+  });
+
+  it('does not override client-provided disableThinking', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          id: '1',
+          object: 'chat.completion',
+          created: 0,
+          model: 'qwen2.5:4b',
+          choices: [
+            {
+              index: 0,
+              message: { role: 'assistant', content: 'hi' },
+              finish_reason: 'stop',
+            },
+          ],
+        }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const adapter = new LocalAdapter({ ...config, localDisableThinking: true });
+    await adapter.chat({
+      model: 'aiping:claw',
+      messages: [{ role: 'user', content: 'hello' }],
+      disableThinking: false,
+    });
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const parsed = JSON.parse((init as RequestInit).body as string);
+    expect(parsed.disableThinking).toBe(false);
+  });
+
+  it('skips disableThinking when localDisableThinking is false', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          id: '1',
+          object: 'chat.completion',
+          created: 0,
+          model: 'qwen2.5:4b',
+          choices: [
+            {
+              index: 0,
+              message: { role: 'assistant', content: 'hi' },
+              finish_reason: 'stop',
+            },
+          ],
+        }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const adapter = new LocalAdapter({ ...config, localDisableThinking: false });
+    await adapter.chat({
+      model: 'aiping:claw',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const parsed = JSON.parse((init as RequestInit).body as string);
+    expect(parsed).not.toHaveProperty('disableThinking');
+  });
+});
+
 describe('LocalAdapter.ping()', () => {
   it('returns ok=true when /api/tags responds', async () => {
     vi.stubGlobal(

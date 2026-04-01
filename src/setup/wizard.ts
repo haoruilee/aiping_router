@@ -550,6 +550,8 @@ export async function runSetupWizard(existingConfig: PartialConfig = {}): Promis
       localVlmModel,
       localImageModel,
       localVideoModel,
+      localDisableThinking:
+        existingConfig.localDisableThinking ?? DEFAULT_CONFIG.localDisableThinking,
       cloudVlmModel,
       cloudImageModel,
       cloudVideoModel,

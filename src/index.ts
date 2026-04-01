@@ -86,6 +86,7 @@ export default function register(api: OpenClawPluginAPI): void {
               localVlmModel:       o.localVlmModel    ?? DEFAULT_CONFIG.localVlmModel,
               localImageModel:     o.localImageModel  ?? DEFAULT_CONFIG.localImageModel,
               localVideoModel:     o.localVideoModel  ?? DEFAULT_CONFIG.localVideoModel,
+              localDisableThinking: DEFAULT_CONFIG.localDisableThinking,
               cloudVlmModel:       o.cloudVlmModel    ?? DEFAULT_CONFIG.cloudVlmModel,
               cloudImageModel:     o.cloudImageModel  ?? DEFAULT_CONFIG.cloudImageModel,
               cloudVideoModel:     o.cloudVideoModel  ?? DEFAULT_CONFIG.cloudVideoModel,
@@ -333,6 +334,10 @@ function buildConfig(raw: Record<string, unknown>): PluginConfig {
     localVlmModel:    (raw['localVlmModel']   as string)  ?? DEFAULT_CONFIG.localVlmModel,
     localImageModel:  (raw['localImageModel'] as string)  ?? DEFAULT_CONFIG.localImageModel,
     localVideoModel:  (raw['localVideoModel'] as string)  ?? DEFAULT_CONFIG.localVideoModel,
+    localDisableThinking:
+      typeof raw['localDisableThinking'] === 'boolean'
+        ? raw['localDisableThinking']
+        : DEFAULT_CONFIG.localDisableThinking,
     cloudVlmModel:    (raw['cloudVlmModel']    as string)  || DEFAULT_CONFIG.cloudVlmModel,
     cloudImageModel:  (raw['cloudImageModel']  as string)  || DEFAULT_CONFIG.cloudImageModel,
     cloudVideoModel:  (raw['cloudVideoModel']  as string)  || DEFAULT_CONFIG.cloudVideoModel,
