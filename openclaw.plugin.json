@@ -1,6 +1,6 @@
 {
   "id": "model_router",
-  "version": "1.2.14",
+  "version": "1.2.15",
   "name": "AIPing Model Router",
   "description": "Routes 'aiping:claw' model requests between your local Ollama model and AIPing cloud (Kimi-K2.5) using fast rule-based scoring.",
   "extensions": ["dist/index.js"],
