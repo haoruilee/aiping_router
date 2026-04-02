@@ -69,24 +69,37 @@ describe('LocalAdapter.listModels()', () => {
 });
 
 describe('LocalAdapter localDisableThinking', () => {
-  it('adds think: false to local chat body when enabled and client omits thinking options', async () => {
+  const ollamaChatDone = {
+    model: 'qwen2.5:4b',
+    message: { role: 'assistant', content: 'hi' },
+    done: true,
+    done_reason: 'stop',
+  };
+
+  it('POSTs Ollama native /api/chat (not OpenAI /v1/chat/completions)', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: () =>
-        Promise.resolve({
-          id: '1',
-          object: 'chat.completion',
-          created: 0,
-          model: 'qwen2.5:4b',
-          choices: [
-            {
-              index: 0,
-              message: { role: 'assistant', content: 'hi' },
-              finish_reason: 'stop',
-            },
-          ],
-        }),
+      json: () => Promise.resolve(ollamaChatDone),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const adapter = new LocalAdapter({ ...config, localDisableThinking: false });
+    await adapter.chat({
+      model: 'aiping:claw',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toContain('/api/chat');
+    expect(String(url)).not.toContain('/v1/chat/completions');
+  });
+
+  it('adds think: false to local /api/chat body when enabled and client omits thinking options', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(ollamaChatDone),
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -101,26 +114,14 @@ describe('LocalAdapter localDisableThinking', () => {
     const parsed = JSON.parse((init as RequestInit).body as string);
     expect(parsed.think).toBe(false);
     expect(parsed).not.toHaveProperty('disableThinking');
+    expect(parsed.stream).toBe(false);
   });
 
   it('does not override client-provided think', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: () =>
-        Promise.resolve({
-          id: '1',
-          object: 'chat.completion',
-          created: 0,
-          model: 'qwen2.5:4b',
-          choices: [
-            {
-              index: 0,
-              message: { role: 'assistant', content: 'hi' },
-              finish_reason: 'stop',
-            },
-          ],
-        }),
+      json: () => Promise.resolve(ollamaChatDone),
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -140,20 +141,7 @@ describe('LocalAdapter localDisableThinking', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: () =>
-        Promise.resolve({
-          id: '1',
-          object: 'chat.completion',
-          created: 0,
-          model: 'qwen2.5:4b',
-          choices: [
-            {
-              index: 0,
-              message: { role: 'assistant', content: 'hi' },
-              finish_reason: 'stop',
-            },
-          ],
-        }),
+      json: () => Promise.resolve(ollamaChatDone),
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -173,20 +161,7 @@ describe('LocalAdapter localDisableThinking', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: () =>
-        Promise.resolve({
-          id: '1',
-          object: 'chat.completion',
-          created: 0,
-          model: 'qwen2.5:4b',
-          choices: [
-            {
-              index: 0,
-              message: { role: 'assistant', content: 'hi' },
-              finish_reason: 'stop',
-            },
-          ],
-        }),
+      json: () => Promise.resolve(ollamaChatDone),
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -206,20 +181,7 @@ describe('LocalAdapter localDisableThinking', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: () =>
-        Promise.resolve({
-          id: '1',
-          object: 'chat.completion',
-          created: 0,
-          model: 'qwen2.5:4b',
-          choices: [
-            {
-              index: 0,
-              message: { role: 'assistant', content: 'hi' },
-              finish_reason: 'stop',
-            },
-          ],
-        }),
+      json: () => Promise.resolve(ollamaChatDone),
     });
     vi.stubGlobal('fetch', fetchMock);
 
