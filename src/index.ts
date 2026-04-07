@@ -17,6 +17,11 @@ import type { PluginConfig } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 import { Router } from './router/router.js';
 import { detectRouterTask, resolveModelsForTask } from './router/task.js';
+import {
+  isEmptyAssistantChatResponse,
+  openAiSseChunkIsSubstantive,
+  sseChunkIsDoneLine,
+} from './router/empty-response.js';
 import { LocalAdapter } from './providers/local.js';
 import { CloudAdapter } from './providers/cloud.js';
 import { runSetupWizard } from './setup/wizard.js';
@@ -186,7 +191,8 @@ export default function register(api: OpenClawPluginAPI): void {
             chatReq,
             res,
             resolved.localModel,
-            resolved.cloudModel
+            resolved.cloudModel,
+            (msg) => liveCfg.debugRouting && console.log(`[aiping:router] ${msg}`)
           );
           res.end();
         } else {
@@ -195,7 +201,8 @@ export default function register(api: OpenClawPluginAPI): void {
             liveCfg,
             chatReq,
             resolved.localModel,
-            resolved.cloudModel
+            resolved.cloudModel,
+            (msg) => liveCfg.debugRouting && console.log(`[aiping:router] ${msg}`)
           );
           const json = JSON.stringify(response);
           res.writeHead(200, {
@@ -269,14 +276,20 @@ async function fetchChat(
   cfg: PluginConfig,
   req: unknown,
   resolvedLocalModel: string,
-  resolvedCloudModel: string
+  resolvedCloudModel: string,
+  log?: (msg: string) => void
 ): Promise<unknown> {
   const local = new LocalAdapter(cfg);
   const cloud = new CloudAdapter(cfg);
   const chatReq = req as Parameters<typeof local.chat>[0];
   if (target === 'local') {
     try {
-      return await local.chat(chatReq, resolvedLocalModel);
+      const localResp = await local.chat(chatReq, resolvedLocalModel);
+      if (cfg.fallbackToCloud && isEmptyAssistantChatResponse(localResp)) {
+        log?.('empty local completion (no text / no tools / out=0) → retry cloud');
+        return cloud.chat(chatReq, resolvedCloudModel);
+      }
+      return localResp;
     } catch (e) {
       if (cfg.fallbackToCloud) {
         return cloud.chat(chatReq, resolvedCloudModel);
@@ -300,11 +313,58 @@ async function pipeStream(
   req: unknown,
   res: ServerResponse,
   resolvedLocalModel: string,
-  resolvedCloudModel: string
+  resolvedCloudModel: string,
+  log?: (msg: string) => void
 ): Promise<void> {
   const local = new LocalAdapter(cfg);
   const cloud = new CloudAdapter(cfg);
   const r = req as Parameters<typeof local.chatStream>[0];
+
+  if (target === 'local' && cfg.fallbackToCloud) {
+    try {
+      const buf: string[] = [];
+      let substantive = false;
+      for await (const chunk of local.chatStream(r, resolvedLocalModel)) {
+        const chunkSubstantive = openAiSseChunkIsSubstantive(chunk);
+        const done = sseChunkIsDoneLine(chunk);
+        if (chunkSubstantive) substantive = true;
+
+        if (done) {
+          if (!substantive) {
+            log?.('stream: empty local (no delta content / tool_calls) → retry cloud');
+            for await (const c of cloud.chatStream(r, resolvedCloudModel)) res.write(c);
+            return;
+          }
+          for (const b of buf) res.write(b);
+          buf.length = 0;
+          res.write(chunk);
+          return;
+        }
+
+        if (substantive) {
+          for (const b of buf) res.write(b);
+          buf.length = 0;
+          res.write(chunk);
+        } else {
+          buf.push(chunk);
+        }
+      }
+      if (!substantive) {
+        log?.('stream ended without assistant output → retry cloud');
+        for await (const c of cloud.chatStream(r, resolvedCloudModel)) res.write(c);
+      } else {
+        for (const b of buf) res.write(b);
+      }
+      return;
+    } catch (e) {
+      if (cfg.fallbackToCloud) {
+        for await (const chunk of cloud.chatStream(r, resolvedCloudModel)) res.write(chunk);
+        return;
+      }
+      throw e;
+    }
+  }
+
   if (target === 'local') {
     try {
       for await (const chunk of local.chatStream(r, resolvedLocalModel)) res.write(chunk);
