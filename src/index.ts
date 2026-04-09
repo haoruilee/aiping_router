@@ -1,5 +1,5 @@
 /**
- * @aiping.cn/model_router — OpenClaw Plugin Entry Point (v1.5)
+ * @aiping.cn/model_router — OpenClaw Plugin Entry Point (experimental branch: empty-local-fallback-soft-task-type)
  *
  * Real OpenClaw 2026.3.11 plugin API:
  *   - api.pluginConfig          → plugin's validated config (read-only snapshot)
@@ -18,7 +18,9 @@ import { DEFAULT_CONFIG } from './types.js';
 import { Router } from './router/router.js';
 import { detectRouterTask, resolveModelsForTask } from './router/task.js';
 import {
-  isEmptyAssistantChatResponse,
+  classifyAssistantChatResponse,
+  classifyObservableError,
+  type FallbackDecision,
   openAiSseChunkIsSubstantive,
   sseChunkIsDoneLine,
 } from './router/empty-response.js';
@@ -28,6 +30,20 @@ import { runSetupWizard } from './setup/wizard.js';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
+
+const ROUTER_PACKAGE_VERSION = readRouterPackageVersion();
+
+function readRouterPackageVersion(): string {
+  try {
+    const packageJsonPath = path.resolve(__dirname, '..', 'package.json');
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
+      version?: unknown;
+    };
+    return typeof packageJson.version === 'string' ? packageJson.version : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Plugin entry point — called synchronously when the plugin is loaded
@@ -235,7 +251,7 @@ export default function register(api: OpenClawPluginAPI): void {
       res.end(JSON.stringify({
         ok: true,
         plugin: '@aiping.cn/model_router',
-        version: '1.5.0',
+        version: ROUTER_PACKAGE_VERSION,
         configured: Boolean(liveCfg.aipingApiKey),
         localModel: liveCfg.localModel || '(未配置，请运行 openclaw model-router-setup)',
         cloudModel: liveCfg.cloudModel,
@@ -285,13 +301,18 @@ async function fetchChat(
   if (target === 'local') {
     try {
       const localResp = await local.chat(chatReq, resolvedLocalModel);
-      if (cfg.fallbackToCloud && isEmptyAssistantChatResponse(localResp)) {
-        log?.('empty local completion (no text / no tools / out=0) → retry cloud');
-        return cloud.chat(chatReq, resolvedCloudModel);
-      }
-      return localResp;
+      const localFailure = classifyAssistantChatResponse(localResp);
+      if (!localFailure) return localResp;
+      if (!cfg.fallbackToCloud) return localResp;
+
+      log?.(
+        `local response classified as ${localFailure.failureType} (${localFailure.detail}) → cloud (no local retry)`
+      );
+      return cloud.chat(chatReq, resolvedCloudModel);
     } catch (e) {
       if (cfg.fallbackToCloud) {
+        const failure = classifyObservableError(e);
+        log?.(`local error classified as ${failure.failureType} (${failure.detail}) → retry cloud`);
         return cloud.chat(chatReq, resolvedCloudModel);
       }
       throw e;
@@ -322,42 +343,24 @@ async function pipeStream(
 
   if (target === 'local' && cfg.fallbackToCloud) {
     try {
-      const buf: string[] = [];
-      let substantive = false;
-      for await (const chunk of local.chatStream(r, resolvedLocalModel)) {
-        const chunkSubstantive = openAiSseChunkIsSubstantive(chunk);
-        const done = sseChunkIsDoneLine(chunk);
-        if (chunkSubstantive) substantive = true;
-
-        if (done) {
-          if (!substantive) {
-            log?.('stream: empty local (no delta content / tool_calls) → retry cloud');
-            for await (const c of cloud.chatStream(r, resolvedCloudModel)) res.write(c);
-            return;
-          }
-          for (const b of buf) res.write(b);
-          buf.length = 0;
-          res.write(chunk);
-          return;
-        }
-
-        if (substantive) {
-          for (const b of buf) res.write(b);
-          buf.length = 0;
-          res.write(chunk);
-        } else {
-          buf.push(chunk);
-        }
+      const firstAttempt = await collectLocalStreamAttempt(
+        local.chatStream(r, resolvedLocalModel)
+      );
+      if (!firstAttempt.failure) {
+        writeStreamChunks(res, firstAttempt.chunks);
+        return;
       }
-      if (!substantive) {
-        log?.('stream ended without assistant output → retry cloud');
-        for await (const c of cloud.chatStream(r, resolvedCloudModel)) res.write(c);
-      } else {
-        for (const b of buf) res.write(b);
-      }
+
+      log?.(
+        `stream local response classified as ${firstAttempt.failure.failureType} ` +
+        `(${firstAttempt.failure.detail}) → cloud (no local retry)`
+      );
+      for await (const c of cloud.chatStream(r, resolvedCloudModel)) res.write(c);
       return;
     } catch (e) {
       if (cfg.fallbackToCloud) {
+        const failure = classifyObservableError(e);
+        log?.(`stream local error classified as ${failure.failureType} (${failure.detail}) → retry cloud`);
         for await (const chunk of cloud.chatStream(r, resolvedCloudModel)) res.write(chunk);
         return;
       }
@@ -378,6 +381,44 @@ async function pipeStream(
     }
   }
   for await (const chunk of cloud.chatStream(r, resolvedCloudModel)) res.write(chunk);
+}
+
+type LocalStreamAttempt = {
+  chunks: string[];
+  failure: FallbackDecision | null;
+};
+
+async function collectLocalStreamAttempt(
+  stream: AsyncGenerator<string>
+): Promise<LocalStreamAttempt> {
+  const chunks: string[] = [];
+  let substantive = false;
+  let sawDone = false;
+
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+    if (openAiSseChunkIsSubstantive(chunk)) substantive = true;
+    if (sseChunkIsDoneLine(chunk)) sawDone = true;
+  }
+
+  if (!substantive) {
+    return {
+      chunks,
+      failure: {
+        failureType: 'empty_output',
+        recovery: 'cloud',
+        detail: sawDone
+          ? 'stream finished without content or tool calls'
+          : 'stream ended without a substantive assistant delta',
+      },
+    };
+  }
+
+  return { chunks, failure: null };
+}
+
+function writeStreamChunks(res: ServerResponse, chunks: string[]): void {
+  for (const chunk of chunks) res.write(chunk);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

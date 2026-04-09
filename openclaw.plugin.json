@@ -1,8 +1,8 @@
 {
   "id": "model_router",
-  "version": "1.2.15",
+  "version": "0.0.0-empty-local-fallback.1",
   "name": "AIPing Model Router",
-  "description": "Routes 'aiping:claw' model requests between your local Ollama model and AIPing cloud (Kimi-K2.5) using fast rule-based scoring.",
+  "description": "EXPERIMENTAL (branch feature/empty-local-fallback-soft-task-type). Routes 'aiping:claw' between local Ollama and AIPing cloud. Not a stable release version.",
   "extensions": ["dist/index.js"],
   "configSchema": {
     "type": "object",
