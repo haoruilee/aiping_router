@@ -94,4 +94,28 @@ describe('Router.decide() — default threshold 85', () => {
     const decision = router.decide(makeRequest('Tell me a joke'));
     expect(decision.reasons.length).toBeGreaterThan(0);
   });
+
+  it('task_type hints add soft score only (research stays local when total < threshold)', () => {
+    const router = new Router(baseConfig);
+    const req: ChatRequest = {
+      model: 'aiping:claw',
+      messages: [{ role: 'user', content: 'Hi' }],
+      task_type: 'research',
+    };
+    const decision = router.decide(req)
+    expect(decision.target).toBe('local');
+    expect(decision.forced).toBe(false);
+    expect(decision.reasons.some((r) => r.includes('task_type=research'))).toBe(true);
+  });
+
+  it('task_type from metadata is honoured', () => {
+    const router = new Router(baseConfig);
+    const req: ChatRequest = {
+      model: 'aiping:claw',
+      messages: [{ role: 'user', content: 'Hi' }],
+      metadata: { task_type: 'memory' },
+    };
+    const decision = router.decide(req);
+    expect(decision.reasons.some((r) => r.includes('task_type=memory'))).toBe(true);
+  });
 });

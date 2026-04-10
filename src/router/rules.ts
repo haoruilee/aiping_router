@@ -179,6 +179,60 @@ export class MultiTurnContextScorer implements RuleScorer {
  * Detects explicit @local or @cloud directives in the last user message.
  * These force routing and override all other scores.
  */
+function readWorkflowTaskType(request: ChatRequest): string | undefined {
+  const top = request as Record<string, unknown>;
+  const direct = top['task_type'] ?? top['taskType'];
+  if (typeof direct === 'string' && direct.trim()) return direct.trim().toLowerCase();
+  const meta = top['metadata'];
+  if (meta && typeof meta === 'object' && meta !== null) {
+    const m = meta as Record<string, unknown>;
+    const nested = m['task_type'] ?? m['taskType'];
+    if (typeof nested === 'string' && nested.trim()) return nested.trim().toLowerCase();
+  }
+  return undefined;
+}
+
+/**
+ * Soft routing hints from agent / harness (e.g. PinchBench): nudge toward cloud with small
+ * fixed bonuses instead of forcing cloud.
+ */
+export class WorkflowTaskTypeScorer implements RuleScorer {
+  readonly name = 'workflow_task_type';
+  readonly maxScore = 12;
+
+  score(request: ChatRequest): DimensionScore {
+    const t = readWorkflowTaskType(request);
+    if (!t) {
+      return {
+        name: this.name,
+        score: 0,
+        maxScore: this.maxScore,
+        reason: '无 task_type 提示',
+      };
+    }
+
+    let points = 0;
+    if (t === 'research') points = 8;
+    else if (t === 'memory') points = 6;
+    else if (t === 'tool') points = 12;
+    else {
+      return {
+        name: this.name,
+        score: 0,
+        maxScore: this.maxScore,
+        reason: `未知 task_type=${t}`,
+      };
+    }
+
+    return {
+      name: this.name,
+      score: points,
+      maxScore: this.maxScore,
+      reason: `task_type=${t} → +${points}（软加分）`,
+    };
+  }
+}
+
 export class OverrideScorer implements RuleScorer {
   readonly name = 'override_directive';
   readonly maxScore = 0; // Does not contribute to score; uses forced field
@@ -329,4 +383,5 @@ export const DEFAULT_SCORERS: RuleScorer[] = [
   new TokenCountScorer(),
   new CodeComplexityScorer(),
   new ReasoningDepthScorer(),
+  new WorkflowTaskTypeScorer(),
 ];
